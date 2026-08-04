@@ -11,22 +11,19 @@ import 'package:odoocrm/core/utils/html_text_utils.dart';
 import 'package:odoocrm/core/utils/initials.dart';
 import 'package:odoocrm/core/widgets/empty_view.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
-import 'package:odoocrm/core/widgets/html_content.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
-import 'package:odoocrm/features/activities/presentation/providers/activity_notifier.dart';
-import 'package:odoocrm/features/activities/presentation/widgets/recent_activities_section.dart';
-import 'package:odoocrm/features/activities/presentation/widgets/schedule_activity_dialog.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
 import 'package:odoocrm/features/chatter/presentation/widgets/log_note_sheet.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
+import 'package:odoocrm/features/leads/presentation/providers/internal_note_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-enum _DetailTab { info, remarks, activities }
+enum _DetailTab { info, internalNote, remarks }
 
 class LeadDetailPage extends HookConsumerWidget {
   const LeadDetailPage({super.key, required this.leadId});
@@ -58,7 +55,6 @@ class LeadDetailPage extends HookConsumerWidget {
     final leadAsync = ref.watch(leadDetailNotifierProvider(leadId));
     final currentUser = ref.watch(authNotifierProvider).valueOrNull;
     final stagesAsync = ref.watch(stageNotifierProvider);
-    final activitiesAsync = ref.watch(activityNotifierProvider(leadId));
     final isActing = useState(false);
     final tab = useState(_DetailTab.info);
 
@@ -242,29 +238,6 @@ class LeadDetailPage extends HookConsumerWidget {
       }
     }
 
-    Future<void> scheduleActivity() async {
-      if (currentUser == null) {
-        await showMessage('User session not found');
-        return;
-      }
-      final result = await showScheduleActivityDialog(
-        context: context,
-        ref: ref,
-        currentUser: currentUser,
-      );
-      if (result == null) return;
-      final error = await ref
-          .read(activityNotifierProvider(leadId).notifier)
-          .createActivity(
-            activityTypeId: result.activityTypeId,
-            summary: result.summary,
-            note: result.note,
-            dateDeadline: result.dueDate,
-            userId: result.userId,
-          );
-      await showMessage(error ?? 'Activity scheduled');
-    }
-
     return Scaffold(
       backgroundColor: AppTheme.scaffold,
       body: leadAsync.when(
@@ -285,7 +258,9 @@ class LeadDetailPage extends HookConsumerWidget {
           final isWon = _isWonName(lead.stage?.name);
           final isLost = _isLostName(lead.stage?.name);
           final phone = lead.phone ?? lead.mobile ?? '';
-          final actCount = activitiesAsync.valueOrNull?.length ?? 0;
+          final noteState = ref.watch(internalNoteNotifierProvider(leadId));
+          final editingNote =
+              tab.value == _DetailTab.internalNote && noteState.isEditing;
 
           return Stack(
             children: [
@@ -482,20 +457,19 @@ class LeadDetailPage extends HookConsumerWidget {
                                     ),
                                     const SizedBox(width: 20),
                                     _DetailTabBtn(
+                                      label: 'Internal Note',
+                                      selected: tab.value ==
+                                          _DetailTab.internalNote,
+                                      onTap: () => tab.value =
+                                          _DetailTab.internalNote,
+                                    ),
+                                    const SizedBox(width: 20),
+                                    _DetailTabBtn(
                                       label: 'Remarks',
                                       selected:
                                           tab.value == _DetailTab.remarks,
                                       onTap: () =>
                                           tab.value = _DetailTab.remarks,
-                                    ),
-                                    const SizedBox(width: 20),
-                                    _DetailTabBtn(
-                                      label: 'Activities',
-                                      count: actCount,
-                                      selected:
-                                          tab.value == _DetailTab.activities,
-                                      onTap: () =>
-                                          tab.value = _DetailTab.activities,
                                     ),
                                   ],
                                 ),
@@ -516,9 +490,6 @@ class LeadDetailPage extends HookConsumerWidget {
                         await ref
                             .read(chatterNotifierProvider(leadId).notifier)
                             .refresh();
-                        await ref
-                            .read(activityNotifierProvider(leadId).notifier)
-                            .refresh();
                       },
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(14, 14, 14, 120),
@@ -531,13 +502,10 @@ class LeadDetailPage extends HookConsumerWidget {
                               onAssign: assignToMe,
                               formatInr: _formatInr,
                             ),
+                          if (tab.value == _DetailTab.internalNote)
+                            _InternalNoteTab(leadId: leadId),
                           if (tab.value == _DetailTab.remarks)
                             _RemarksTab(leadId: leadId),
-                          if (tab.value == _DetailTab.activities)
-                            RecentActivitiesSection(
-                              leadId: leadId,
-                              onAdd: scheduleActivity,
-                            ),
                         ],
                       ),
                     ),
@@ -566,31 +534,112 @@ class LeadDetailPage extends HookConsumerWidget {
                       stops: [0.68, 1],
                     ),
                   ),
-                  child: SizedBox(
-                    height: 54,
-                    child: FilledButton.icon(
-                      onPressed:
-                          isActing.value ? null : () => callCustomer(lead),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppTheme.callGreen,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(27),
+                  child: editingNote
+                      ? Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: noteState.isSaving
+                                    ? null
+                                    : () => ref
+                                        .read(
+                                          internalNoteNotifierProvider(
+                                            leadId,
+                                          ).notifier,
+                                        )
+                                        .cancel(),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppTheme.textSecondary,
+                                  side: const BorderSide(
+                                    color: AppTheme.borderStrong,
+                                  ),
+                                  minimumSize: const Size.fromHeight(54),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(27),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: noteState.isSaving
+                                    ? null
+                                    : () async {
+                                        final error = await ref
+                                            .read(
+                                              internalNoteNotifierProvider(
+                                                leadId,
+                                              ).notifier,
+                                            )
+                                            .save();
+                                        if (!context.mounted) return;
+                                        await showMessage(
+                                          error ??
+                                              'Internal notes updated successfully.',
+                                        );
+                                      },
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppTheme.navy,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size.fromHeight(54),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(27),
+                                  ),
+                                ),
+                                child: noteState.isSaving
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.4,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text(
+                                        'Save',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : SizedBox(
+                          height: 54,
+                          child: FilledButton.icon(
+                            onPressed: isActing.value
+                                ? null
+                                : () => callCustomer(lead),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.callGreen,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(27),
+                              ),
+                              elevation: 0,
+                              shadowColor:
+                                  AppTheme.callGreen.withValues(alpha: 0.32),
+                            ),
+                            icon: const Icon(Icons.phone, size: 19),
+                            label: Text(
+                              phone.isEmpty ? 'Call' : 'Call $phone',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
                         ),
-                        elevation: 0,
-                        shadowColor:
-                            AppTheme.callGreen.withValues(alpha: 0.32),
-                      ),
-                      icon: const Icon(Icons.phone, size: 19),
-                      label: Text(
-                        phone.isEmpty ? 'Call' : 'Call $phone',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
                 ),
               ),
             ],
@@ -664,13 +713,11 @@ class _DetailTabBtn extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
-    this.count,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  final int? count;
 
   @override
   Widget build(BuildContext context) {
@@ -686,25 +733,12 @@ class _DetailTabBtn extends StatelessWidget {
             ),
           ),
         ),
-        child: Text.rich(
-          TextSpan(
-            text: label,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w700,
-              color: selected ? Colors.white : AppTheme.textOnNavy,
-            ),
-            children: [
-              if (count != null)
-                TextSpan(
-                  text: ' $count',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: (selected ? Colors.white : AppTheme.textOnNavy)
-                        .withValues(alpha: 0.6),
-                  ),
-                ),
-            ],
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : AppTheme.textOnNavy,
           ),
         ),
       ),
@@ -848,10 +882,52 @@ class _DetailsTab extends StatelessWidget {
         _KeyValueCard(title: 'Contact', rows: contactRows),
         const SizedBox(height: 12),
         _KeyValueCard(title: 'CRM details', rows: crmRows, monoValues: true),
-        const SizedBox(height: 12),
+      ],
+    );
+  }
+}
+
+class _InternalNoteTab extends HookConsumerWidget {
+  const _InternalNoteTab({required this.leadId});
+
+  final int leadId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final noteState = ref.watch(internalNoteNotifierProvider(leadId));
+    final notifier = ref.read(internalNoteNotifierProvider(leadId).notifier);
+    final controller = useTextEditingController(text: noteState.currentNote);
+    final focusNode = useFocusNode();
+
+    useEffect(() {
+      if (controller.text != noteState.currentNote) {
+        controller.value = TextEditingValue(
+          text: noteState.currentNote,
+          selection: TextSelection.collapsed(
+            offset: noteState.currentNote.length,
+          ),
+        );
+      }
+      return null;
+    }, [noteState.originalNote, noteState.isEditing, noteState.isSaving]);
+
+    useEffect(() {
+      if (noteState.isEditing) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (focusNode.canRequestFocus) {
+            focusNode.requestFocus();
+          }
+        });
+      }
+      return null;
+    }, [noteState.isEditing]);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
+          padding: const EdgeInsets.fromLTRB(15, 14, 15, 16),
           decoration: BoxDecoration(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(14),
@@ -861,19 +937,85 @@ class _DetailsTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'DESCRIPTION',
+                'Internal Notes',
                 style: TextStyle(
-                  fontSize: 10.5,
-                  letterSpacing: 0.12,
-                  color: AppTheme.textMuted,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
                 ),
               ),
-              const SizedBox(height: 8),
-              HtmlContent(html: lead.description),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                focusNode: focusNode,
+                readOnly: !noteState.isEditing || noteState.isSaving,
+                minLines: 12,
+                maxLines: null,
+                keyboardType: TextInputType.multiline,
+                textAlignVertical: TextAlignVertical.top,
+                onChanged: notifier.updateNote,
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  height: 1.45,
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Write internal notes...',
+                  hintStyle: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  filled: true,
+                  fillColor: noteState.isEditing
+                      ? AppTheme.surface
+                      : AppTheme.elevated,
+                  contentPadding: const EdgeInsets.all(14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.borderStrong),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.borderStrong),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: AppTheme.navy,
+                      width: 1.5,
+                    ),
+                  ),
+                  disabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.border),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
+        if (!noteState.isEditing) ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: notifier.startEditing,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.navy,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text(
+                'Edit Internal Note',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
