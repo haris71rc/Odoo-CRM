@@ -22,21 +22,21 @@ class EmptyView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 72,
-              height: 72,
+              width: 62,
+              height: 62,
               decoration: BoxDecoration(
-                color: AppTheme.elevated,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppTheme.border),
+                color: const Color(0xFFF2F4F7),
+                borderRadius: BorderRadius.circular(18),
               ),
-              child: Icon(icon, size: 32, color: AppTheme.primary),
+              child: Icon(icon, size: 28, color: AppTheme.textMuted),
             ),
             const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: AppTheme.textMuted,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: AppTheme.textSecondary,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],

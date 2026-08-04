@@ -19,26 +19,95 @@ class HomeShell extends StatelessWidget {
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(
-          border: Border(
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          border: const Border(
             top: BorderSide(color: AppTheme.border),
           ),
-        ),
-        child: NavigationBar(
-          selectedIndex: navigationShell.currentIndex,
-          onDestinationSelected: _onTap,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.handshake_outlined),
-              selectedIcon: Icon(Icons.handshake),
-              label: 'Leads',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.analytics_outlined),
-              selectedIcon: Icon(Icons.analytics),
-              label: 'Analytics',
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.textPrimary.withValues(alpha: 0.06),
+              blurRadius: 20,
+              offset: const Offset(0, -6),
             ),
           ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Row(
+              children: [
+                _NavItem(
+                  label: 'Leads',
+                  icon: Icons.view_list_rounded,
+                  selected: navigationShell.currentIndex == 0,
+                  onTap: () => _onTap(0),
+                ),
+                _NavItem(
+                  label: 'Analytics',
+                  icon: Icons.bar_chart_rounded,
+                  selected: navigationShell.currentIndex == 1,
+                  onTap: () => _onTap(1),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          height: 52,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                width: 64,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: selected ? AppTheme.navyTint : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  icon,
+                  size: 21,
+                  color: selected ? AppTheme.navy : AppTheme.textMuted,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: selected ? AppTheme.navy : AppTheme.textMuted,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

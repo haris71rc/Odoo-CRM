@@ -13,7 +13,10 @@ Future<void> showLeadFilterSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    showDragHandle: true,
+    backgroundColor: AppTheme.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
     builder: (_) => const LeadFilterSheet(),
   );
 }
@@ -33,8 +36,12 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
   late String? _userName;
   late int? _stageId;
   late String? _stageName;
+  late bool _todayMine;
+  late bool _untouched;
+  late bool _priorityOnly;
+  late bool _openOnly;
 
-  final _dateFormat = DateFormat('dd MMM yyyy');
+  final _dateFormat = DateFormat('dd/MM');
 
   @override
   void initState() {
@@ -47,6 +54,10 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
     _userName = current.assignedUserName;
     _stageId = current.stageId;
     _stageName = current.stageName;
+    _todayMine = current.todayMine;
+    _untouched = current.untouched;
+    _priorityOnly = current.priorityOnly;
+    _openOnly = current.openOnly;
   }
 
   Future<void> _pickCustomRange() async {
@@ -65,6 +76,30 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
       _customEnd = range.end;
       _dateFilter = LeadDateFilter.custom;
     });
+  }
+
+  String _rangeLabel(LeadDateFilter? filter) {
+    final now = DateTime.now();
+    switch (filter) {
+      case LeadDateFilter.today:
+        return _dateFormat.format(now);
+      case LeadDateFilter.thisWeek:
+        final start = now.subtract(Duration(days: now.weekday - 1));
+        return '${_dateFormat.format(start)} – ${_dateFormat.format(now)}';
+      case LeadDateFilter.thisMonth:
+        return '${_dateFormat.format(DateTime(now.year, now.month, 1))} – ${_dateFormat.format(DateTime(now.year, now.month + 1, 0))}';
+      case LeadDateFilter.thisQuarter:
+        return 'Quarter';
+      case LeadDateFilter.thisYear:
+        return '${now.year}';
+      case LeadDateFilter.custom:
+        if (_customStart != null && _customEnd != null) {
+          return '${_dateFormat.format(_customStart!)} – ${_dateFormat.format(_customEnd!)}';
+        }
+        return 'Pick range';
+      case null:
+        return '—';
+    }
   }
 
   void _apply() {
@@ -87,6 +122,10 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
           assignedUserName: _userName,
           stageId: _stageId,
           stageName: _stageName,
+          todayMine: _todayMine,
+          untouched: _untouched,
+          priorityOnly: _priorityOnly,
+          openOnly: _openOnly,
         );
     Navigator.of(context).pop();
   }
@@ -98,307 +137,379 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final usersAsync = ref.watch(usersNotifierProvider);
-    final stagesAsync = ref.watch(stageNotifierProvider);
+    final leadsCount =
+        ref.watch(leadNotifierProvider).valueOrNull?.length ?? 0;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.82;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.88;
 
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(bottom: bottomInset),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxHeight),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Filter Leads',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Close',
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
+    final filterDefs = [
+      (
+        'todayMine',
+        'Assigned to me today',
+        'Auto-assigned leads created today',
+        _todayMine,
+        () => setState(() => _todayMine = !_todayMine),
+      ),
+      (
+        'untouched',
+        'Untouched leads',
+        'Salesperson not set',
+        _untouched,
+        () => setState(() => _untouched = !_untouched),
+      ),
+      (
+        'priority',
+        'High priority',
+        'Starred opportunities',
+        _priorityOnly,
+        () => setState(() => _priorityOnly = !_priorityOnly),
+      ),
+      (
+        'open',
+        'Open opportunities',
+        'Excludes Won and Lost',
+        _openOnly,
+        () => setState(() => _openOnly = !_openOnly),
+      ),
+    ];
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SizedBox(
+        height: maxHeight,
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 34,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD0D5DD),
+                borderRadius: BorderRadius.circular(2),
               ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _FilterSectionCard(
-                        title: 'Date',
-                        child: Column(
-                          children: [
-                            RadioGroup<LeadDateFilter>(
-                              groupValue: _dateFilter,
-                              onChanged: (value) async {
-                                if (value == null) return;
-                                if (value == LeadDateFilter.custom) {
-                                  setState(() => _dateFilter = value);
-                                  await _pickCustomRange();
-                                  return;
-                                }
-                                setState(() {
-                                  _dateFilter = value;
-                                  _customStart = null;
-                                  _customEnd = null;
-                                });
-                              },
-                              child: Column(
-                                children: [
-                                  for (final option in LeadDateFilter.values)
-                                    RadioListTile<LeadDateFilter>(
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                      value: option,
-                                      title: Text(option.label),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            if (_dateFilter == LeadDateFilter.custom) ...[
-                              const SizedBox(height: 4),
-                              OutlinedButton.icon(
-                                onPressed: _pickCustomRange,
-                                icon: const Icon(Icons.date_range_rounded),
-                                label: Text(
-                                  _customStart != null && _customEnd != null
-                                      ? '${_dateFormat.format(_customStart!)} – ${_dateFormat.format(_customEnd!)}'
-                                      : 'Select date range',
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _FilterSectionCard(
-                        title: 'Assigned To',
-                        child: usersAsync.when(
-                          loading: () => const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Center(
-                              child: SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            ),
-                          ),
-                          error: (error, _) => Text(
-                            'Unable to load users',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.error,
-                            ),
-                          ),
-                          data: (users) {
-                            final selectedUserId = users.any((u) => u.id == _userId)
-                                ? _userId
-                                : null;
-                            return DropdownButtonFormField<int?>(
-                              key: ValueKey('user-$selectedUserId'),
-                              initialValue: selectedUserId,
-                              isExpanded: true,
-                              menuMaxHeight: 280,
-                              decoration: const InputDecoration(
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                              ),
-                              items: [
-                                const DropdownMenuItem<int?>(
-                                  value: null,
-                                  child: Text('All Users'),
-                                ),
-                                ...users.map(
-                                  (user) => DropdownMenuItem<int?>(
-                                    value: user.id,
-                                    child: Text(
-                                      user.name,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              onChanged: (value) {
-                                setState(() {
-                                  _userId = value;
-                                  if (value == null) {
-                                    _userName = null;
-                                  } else {
-                                    _userName = users
-                                        .where((u) => u.id == value)
-                                        .map((u) => u.name)
-                                        .cast<String>()
-                                        .firstOrNull;
-                                  }
-                                });
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _FilterSectionCard(
-                        title: 'Stage',
-                        child: stagesAsync.when(
-                          loading: () => const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Center(
-                              child: SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            ),
-                          ),
-                          error: (error, _) => Text(
-                            'Unable to load stages',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.error,
-                            ),
-                          ),
-                          data: (stages) {
-                            final selectedStageId =
-                                stages.any((s) => s.id == _stageId)
-                                    ? _stageId
-                                    : null;
-                            return DropdownButtonFormField<int?>(
-                              key: ValueKey('stage-$selectedStageId'),
-                              initialValue: selectedStageId,
-                              isExpanded: true,
-                              menuMaxHeight: 280,
-                              decoration: const InputDecoration(
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                              ),
-                              items: [
-                                const DropdownMenuItem<int?>(
-                                  value: null,
-                                  child: Text('All Stages'),
-                                ),
-                                ...stages.map(
-                                  (stage) => DropdownMenuItem<int?>(
-                                    value: stage.id,
-                                    child: Text(
-                                      stage.name,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              onChanged: (value) {
-                                setState(() {
-                                  _stageId = value;
-                                  if (value == null) {
-                                    _stageName = null;
-                                  } else {
-                                    _stageName = stages
-                                        .where((s) => s.id == value)
-                                        .map((s) => s.name)
-                                        .cast<String>()
-                                        .firstOrNull;
-                                  }
-                                });
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 10),
+              child: Row(
+                children: [
+                  Text(
+                    'Filters',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.textPrimary,
+                    ),
                   ),
-                ),
+                  Spacer(),
+                  Text(
+                    'Odoo domain filters',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textMuted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _reset,
-                        child: const Text('Reset'),
+            ),
+            Expanded(
+              child: ListView(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 6, 20, 4),
+                    child: Text(
+                      'FILTERS',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        letterSpacing: 0.12,
+                        color: AppTheme.textMuted,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _apply,
-                        child: const Text('Apply'),
+                  ),
+                  for (final f in filterDefs)
+                    _SheetRow(
+                      active: f.$4,
+                      onTap: f.$5,
+                      title: f.$2,
+                      subtitle: f.$3,
+                      trailing: _CheckBox(active: f.$4),
+                    ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+                    child: Text(
+                      'CREATE DATE',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        letterSpacing: 0.12,
+                        color: AppTheme.textMuted,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  _SheetRow(
+                    active: _dateFilter == null,
+                    onTap: () => setState(() {
+                      _dateFilter = null;
+                      _customStart = null;
+                      _customEnd = null;
+                    }),
+                    title: 'All time',
+                    trailing: Text(
+                      '—',
+                      style: AppTheme.mono(
+                        fontSize: 11.5,
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                  ),
+                  for (final opt in LeadDateFilter.values)
+                    _SheetRow(
+                      active: _dateFilter == opt,
+                      onTap: () async {
+                        if (opt == LeadDateFilter.custom) {
+                          setState(() => _dateFilter = opt);
+                          await _pickCustomRange();
+                          return;
+                        }
+                        setState(() {
+                          _dateFilter = opt;
+                          _customStart = null;
+                          _customEnd = null;
+                        });
+                      },
+                      title: opt.label,
+                      trailing: Text(
+                        _rangeLabel(opt),
+                        style: AppTheme.mono(
+                          fontSize: 11.5,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  _AssigneeStageSection(
+                    userId: _userId,
+                    stageId: _stageId,
+                    onUserChanged: (id, name) => setState(() {
+                      _userId = id;
+                      _userName = name;
+                    }),
+                    onStageChanged: (id, name) => setState(() {
+                      _stageId = id;
+                      _stageName = name;
+                    }),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: AppTheme.border)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _reset,
+                      child: const Text('Reset'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 14,
+                    child: FilledButton(
+                      onPressed: _apply,
+                      child: Text('Show $leadsCount leads'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _FilterSectionCard extends StatelessWidget {
-  const _FilterSectionCard({
-    required this.title,
-    required this.child,
+class _AssigneeStageSection extends ConsumerWidget {
+  const _AssigneeStageSection({
+    required this.userId,
+    required this.stageId,
+    required this.onUserChanged,
+    required this.onStageChanged,
   });
 
-  final String title;
-  final Widget child;
+  final int? userId;
+  final int? stageId;
+  final void Function(int? id, String? name) onUserChanged;
+  final void Function(int? id, String? name) onStageChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final usersAsync = ref.watch(usersNotifierProvider);
+    final stagesAsync = ref.watch(stageNotifierProvider);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.elevated,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 3,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: AppTheme.primary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+          const Text(
+            'ASSIGNED TO',
+            style: TextStyle(
+              fontSize: 10.5,
+              letterSpacing: 0.12,
+              color: AppTheme.textMuted,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
-          child,
+          usersAsync.when(
+            loading: () => const LinearProgressIndicator(minHeight: 2),
+            error: (_, _) => const Text('Unable to load users'),
+            data: (users) {
+              return DropdownButtonFormField<int?>(
+                initialValue: users.any((u) => u.id == userId) ? userId : null,
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('All Users')),
+                  ...users.map(
+                    (u) => DropdownMenuItem(value: u.id, child: Text(u.name)),
+                  ),
+                ],
+                onChanged: (value) {
+                  final name = value == null
+                      ? null
+                      : users.where((u) => u.id == value).firstOrNull?.name;
+                  onUserChanged(value, name);
+                },
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'STAGE',
+            style: TextStyle(
+              fontSize: 10.5,
+              letterSpacing: 0.12,
+              color: AppTheme.textMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          stagesAsync.when(
+            loading: () => const LinearProgressIndicator(minHeight: 2),
+            error: (_, _) => const Text('Unable to load stages'),
+            data: (stages) {
+              return DropdownButtonFormField<int?>(
+                initialValue:
+                    stages.any((s) => s.id == stageId) ? stageId : null,
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('All Stages')),
+                  ...stages.map(
+                    (s) => DropdownMenuItem(value: s.id, child: Text(s.name)),
+                  ),
+                ],
+                onChanged: (value) {
+                  final name = value == null
+                      ? null
+                      : stages.where((s) => s.id == value).firstOrNull?.name;
+                  onStageChanged(value, name);
+                },
+              );
+            },
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _SheetRow extends StatelessWidget {
+  const _SheetRow({
+    required this.active,
+    required this.onTap,
+    required this.title,
+    this.subtitle,
+    required this.trailing,
+  });
+
+  final bool active;
+  final VoidCallback onTap;
+  final String title;
+  final String? subtitle;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 52),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        color: active ? const Color(0xFFF4F7FB) : AppTheme.surface,
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.textMuted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CheckBox extends StatelessWidget {
+  const _CheckBox({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: active ? AppTheme.navy : AppTheme.surface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: active ? AppTheme.navy : AppTheme.borderStrong,
+          width: 1.5,
+        ),
+      ),
+      child: active
+          ? const Icon(Icons.check, size: 14, color: Colors.white)
+          : null,
     );
   }
 }

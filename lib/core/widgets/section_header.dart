@@ -19,7 +19,7 @@ class SectionHeader extends StatelessWidget {
           width: 3,
           height: 16,
           decoration: BoxDecoration(
-            color: AppTheme.primary,
+            color: AppTheme.navy,
             borderRadius: BorderRadius.circular(2),
           ),
         ),

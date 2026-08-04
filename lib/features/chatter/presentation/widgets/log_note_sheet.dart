@@ -56,9 +56,9 @@ class _LogNoteSheet extends HookConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Log Note',
+            'Add remark',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w800,
                 ),
           ),
           const SizedBox(height: 16),
@@ -67,7 +67,7 @@ class _LogNoteSheet extends HookConsumerWidget {
             maxLines: 5,
             minLines: 3,
             decoration: const InputDecoration(
-              hintText: 'Write an internal note...',
+              hintText: 'Write a remark...',
               alignLabelWithHint: true,
             ),
           ),
@@ -91,7 +91,7 @@ class _LogNoteSheet extends HookConsumerWidget {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Save'),
+                      : const Text('Save remark'),
                 ),
               ),
             ],

@@ -4,77 +4,119 @@ import 'package:odoocrm/core/theme/app_theme.dart';
 class AnalyticsPage extends StatelessWidget {
   const AnalyticsPage({super.key});
 
+  static const _phase2 = [
+    'Daily calls',
+    'Answered vs DNP',
+    'Avg duration',
+    'Inbound / Outbound',
+    'Productivity',
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Analytics')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(maxWidth: 420),
-            padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppTheme.elevated,
-                  Color(0xFF12201E),
-                  AppTheme.surface,
-                ],
+      backgroundColor: AppTheme.surface,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 18, 18, 14),
+              child: Text(
+                'Analytics',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                  letterSpacing: -0.02,
+                ),
               ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppTheme.border),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
-                ),
-              ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: AppTheme.primary.withValues(alpha: 0.35),
+            const Divider(height: 1, color: AppTheme.border),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(34, 0, 34, 90),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 62,
+                      height: 62,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF2F4F7),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Icon(
+                        Icons.bar_chart_rounded,
+                        size: 28,
+                        color: AppTheme.textMuted,
+                      ),
                     ),
-                  ),
-                  child: const Icon(
-                    Icons.insights_rounded,
-                    color: AppTheme.primary,
-                    size: 30,
-                  ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'COMING IN PHASE 2',
+                      style: TextStyle(
+                        fontSize: 11,
+                        letterSpacing: 0.16,
+                        color: AppTheme.gold,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Telecaller performance dashboard',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textPrimary,
+                        letterSpacing: -0.02,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Daily calls, answered vs. DNP, average call duration, inbound / outbound split and productivity graphs.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: AppTheme.textBody,
+                        height: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (final label in _phase2)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.scaffold,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.border),
+                            ),
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  'Coming Soon',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Pipeline analytics and conversion insights will land here next.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: AppTheme.textMuted,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

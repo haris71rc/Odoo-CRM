@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:odoocrm/core/constants/app_constants.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 
@@ -13,17 +14,12 @@ class LoginPage extends HookConsumerWidget {
     final usernameController = useTextEditingController();
     final passwordController = useTextEditingController();
     final obscurePassword = useState(true);
+    final keepSignedIn = useState(true);
     final isSubmitting = useState(false);
     final errorMessage = useState<String?>(null);
-    final appear = useState(false);
     final theme = Theme.of(context);
-
-    useEffect(() {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        appear.value = true;
-      });
-      return null;
-    }, const []);
+    final host =
+        Uri.tryParse(AppConstants.baseUrl)?.host ?? AppConstants.baseUrl;
 
     Future<void> onLogin() async {
       errorMessage.value = null;
@@ -42,167 +38,219 @@ class LoginPage extends HookConsumerWidget {
     }
 
     return Scaffold(
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppTheme.scaffold,
-              Color(0xFF0E1A1C),
-              Color(0xFF0A1F1C),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 500),
-                opacity: appear.value ? 1 : 0,
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 500),
-                  offset: appear.value ? Offset.zero : const Offset(0, 0.04),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: Form(
-                      key: formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+      backgroundColor: AppTheme.surface,
+      body: SafeArea(
+        child: Form(
+          key: formKey,
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(26, 74, 26, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: AppTheme.navy,
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'DL',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 20,
+                            letterSpacing: -0.03,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 26),
+                      Text(
+                        'Sign in to CRM',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.025,
+                          height: 1.2,
+                          fontSize: 27,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Use your existing Odoo credentials. Your permissions and record rules carry over.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.textBody,
+                          height: 1.5,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 30),
+                      Text(
+                        'Email',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: AppTheme.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.01,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      TextFormField(
+                        controller: usernameController,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        style: const TextStyle(fontSize: 15),
+                        decoration: const InputDecoration(
+                          hintText: 'you@digilawyer.ai',
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Email is required';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Password',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: AppTheme.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      TextFormField(
+                        controller: passwordController,
+                        obscureText: obscurePassword.value,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => onLogin(),
+                        style: TextStyle(
+                          fontSize: obscurePassword.value ? 17 : 15,
+                          letterSpacing: obscurePassword.value ? 3 : 0,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '•••••••••',
+                          suffixIcon: TextButton(
+                            onPressed: () =>
+                                obscurePassword.value = !obscurePassword.value,
+                            child: Text(
+                              obscurePassword.value ? 'SHOW' : 'HIDE',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.navy,
+                              ),
+                            ),
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Password is required';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
                         children: [
-                          Text(
-                            'Digi CRM',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.displaySmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -1.2,
-                              color: AppTheme.textPrimary,
+                          SizedBox(
+                            width: 19,
+                            height: 19,
+                            child: Checkbox(
+                              value: keepSignedIn.value,
+                              onChanged: (v) =>
+                                  keepSignedIn.value = v ?? false,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Executive pipeline control',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              color: AppTheme.textMuted,
-                            ),
-                          ),
-                          const SizedBox(height: 36),
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface.withValues(alpha: 0.92),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppTheme.border),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.4),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 12),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  'Sign in',
-                                  style: theme.textTheme.titleLarge,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Use your Odoo credentials',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                                const SizedBox(height: 20),
-                                TextFormField(
-                                  controller: usernameController,
-                                  keyboardType: TextInputType.emailAddress,
-                                  textInputAction: TextInputAction.next,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Username',
-                                    prefixIcon: Icon(Icons.person_outline),
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.trim().isEmpty) {
-                                      return 'Username is required';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 16),
-                                TextFormField(
-                                  controller: passwordController,
-                                  obscureText: obscurePassword.value,
-                                  textInputAction: TextInputAction.done,
-                                  onFieldSubmitted: (_) => onLogin(),
-                                  decoration: InputDecoration(
-                                    labelText: 'Password',
-                                    prefixIcon: const Icon(Icons.lock_outline),
-                                    suffixIcon: IconButton(
-                                      onPressed: () => obscurePassword.value =
-                                          !obscurePassword.value,
-                                      icon: Icon(
-                                        obscurePassword.value
-                                            ? Icons.visibility_outlined
-                                            : Icons.visibility_off_outlined,
-                                      ),
-                                    ),
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Password is required';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                if (errorMessage.value != null) ...[
-                                  const SizedBox(height: 16),
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.error
-                                          .withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: AppTheme.error
-                                            .withValues(alpha: 0.35),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      errorMessage.value!,
-                                      style: const TextStyle(
-                                        color: AppTheme.error,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 24),
-                                FilledButton(
-                                  onPressed:
-                                      isSubmitting.value ? null : onLogin,
-                                  child: isSubmitting.value
-                                      ? const SizedBox(
-                                          height: 22,
-                                          width: 22,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Color(0xFF042F2E),
-                                          ),
-                                        )
-                                      : const Text('Login'),
-                                ),
-                              ],
+                          const SizedBox(width: 9),
+                          const Expanded(
+                            child: Text(
+                              'Keep me signed in',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AppTheme.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
+                      if (errorMessage.value != null) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.lostBg,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.lostBorder),
+                          ),
+                          child: Text(
+                            errorMessage.value!,
+                            style: const TextStyle(color: AppTheme.error),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 26),
+                      FilledButton(
+                        onPressed: isSubmitting.value ? null : onLogin,
+                        child: isSubmitting.value
+                            ? const SizedBox(
+                                height: 22,
+                                width: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Log in'),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(26, 0, 26, 24),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.scaffold,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'DB',
+                        style: AppTheme.mono(
+                          fontSize: 11,
+                          color: AppTheme.textBody,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          host,
+                          style: AppTheme.mono(
+                            fontSize: 11,
+                            color: AppTheme.textPrimary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:odoocrm/features/analytics/presentation/analytics_page.dart';
 import 'package:odoocrm/features/auth/presentation/login/login_page.dart';
+import 'package:odoocrm/features/auth/presentation/profile/profile_page.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/lead_detail/lead_detail_page.dart';
 import 'package:odoocrm/features/leads/presentation/lead_list/lead_list_page.dart';
@@ -74,6 +75,10 @@ GoRouter appRouter(Ref ref) {
           final id = int.parse(state.pathParameters['id']!);
           return LeadDetailPage(leadId: id);
         },
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (context, state) => const ProfilePage(),
       ),
     ],
   );

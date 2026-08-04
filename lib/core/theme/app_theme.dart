@@ -1,42 +1,78 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Dark executive CRM design tokens and Material 3 theme.
+/// DigiLawyer Telecaller CRM light design tokens and Material 3 theme.
 class AppTheme {
   AppTheme._();
 
-  // Surfaces
-  static const Color scaffold = Color(0xFF0B0F14);
-  static const Color surface = Color(0xFF151B23);
-  static const Color elevated = Color(0xFF1C2430);
-  static const Color border = Color(0xFF2A3441);
+  // Brand
+  static const Color navy = Color(0xFF1B3A6B);
+  static const Color gold = Color(0xFFC08A21);
+  static const Color goldSoft = Color(0xFFE9C87B);
+  static const Color callGreen = Color(0xFF0B7A5A);
 
-  // Accents
-  static const Color primary = Color(0xFF2DD4BF);
-  static const Color secondary = Color(0xFF38BDF8);
-  static const Color error = Color(0xFFF87171);
+  // Surfaces
+  static const Color scaffold = Color(0xFFF6F7F9);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color elevated = Color(0xFFF9FAFB);
+  static const Color border = Color(0xFFEAECF0);
+  static const Color borderStrong = Color(0xFFE4E7EC);
+  static const Color navyTint = Color(0xFFE7ECF5);
+
+  // Accents (aliases for existing call sites)
+  static const Color primary = navy;
+  static const Color secondary = gold;
+  static const Color error = Color(0xFFB42318);
 
   // Text
-  static const Color textPrimary = Color(0xFFF8FAFC);
-  static const Color textMuted = Color(0xFF94A3B8);
+  static const Color textPrimary = Color(0xFF101828);
+  static const Color textSecondary = Color(0xFF475467);
+  static const Color textMuted = Color(0xFF98A2B3);
+  static const Color textBody = Color(0xFF667085);
+  static const Color textOnNavy = Color(0xFFA9BEDC);
 
-  static ThemeData get dark {
-    final baseText = GoogleFonts.plusJakartaSansTextTheme(
-      ThemeData(brightness: Brightness.dark).textTheme,
+  // Semantic
+  static const Color wonFg = Color(0xFF05603A);
+  static const Color wonBg = Color(0xFFD1FADF);
+  static const Color wonBorder = Color(0xFFA6EFC5);
+  static const Color lostFg = Color(0xFFB42318);
+  static const Color lostBg = Color(0xFFFEE4E2);
+  static const Color lostBorder = Color(0xFFFDA29B);
+  static const Color followUpBg = Color(0xFFFFF8E8);
+  static const Color followUpBorder = Color(0xFFF3D9A6);
+  static const Color followUpFg = Color(0xFF8A5A08);
+
+  static TextStyle mono({
+    double fontSize = 12.5,
+    FontWeight fontWeight = FontWeight.w500,
+    Color color = textPrimary,
+    double? letterSpacing,
+  }) {
+    return GoogleFonts.ibmPlexMono(
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      color: color,
+      letterSpacing: letterSpacing,
+    );
+  }
+
+  static ThemeData get light {
+    final baseText = GoogleFonts.manropeTextTheme(
+      ThemeData(brightness: Brightness.light).textTheme,
     );
 
-    final colorScheme = const ColorScheme.dark(
+    final colorScheme = const ColorScheme.light(
       primary: primary,
-      onPrimary: Color(0xFF042F2E),
+      onPrimary: Colors.white,
       secondary: secondary,
-      onSecondary: Color(0xFF0C1A24),
+      onSecondary: Colors.white,
       surface: surface,
       onSurface: textPrimary,
-      onSurfaceVariant: textMuted,
+      onSurfaceVariant: textBody,
       error: error,
-      onError: Color(0xFF450A0A),
+      onError: Colors.white,
       outline: border,
-      outlineVariant: Color(0xFF1F2937),
+      outlineVariant: borderStrong,
       surfaceContainerHighest: elevated,
       surfaceContainerHigh: elevated,
       surfaceContainer: surface,
@@ -47,49 +83,49 @@ class AppTheme {
     final textTheme = baseText.copyWith(
       displayLarge: baseText.displayLarge?.copyWith(
         color: textPrimary,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
         letterSpacing: -1.2,
       ),
       headlineMedium: baseText.headlineMedium?.copyWith(
         color: textPrimary,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
         letterSpacing: -0.6,
       ),
       headlineSmall: baseText.headlineSmall?.copyWith(
         color: textPrimary,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
         letterSpacing: -0.4,
       ),
       titleLarge: baseText.titleLarge?.copyWith(
         color: textPrimary,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
         letterSpacing: -0.3,
       ),
       titleMedium: baseText.titleMedium?.copyWith(
         color: textPrimary,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
       ),
       titleSmall: baseText.titleSmall?.copyWith(
         color: textPrimary,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
       ),
       bodyLarge: baseText.bodyLarge?.copyWith(color: textPrimary),
       bodyMedium: baseText.bodyMedium?.copyWith(color: textPrimary),
       bodySmall: baseText.bodySmall?.copyWith(color: textMuted),
       labelLarge: baseText.labelLarge?.copyWith(
         color: textPrimary,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
       ),
     );
 
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: Brightness.light,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: scaffold,
       textTheme: textTheme,
       appBarTheme: AppBarTheme(
-        backgroundColor: scaffold,
+        backgroundColor: surface,
         foregroundColor: textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -100,92 +136,110 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: surface,
         elevation: 0,
-        shadowColor: Colors.black.withValues(alpha: 0.45),
+        shadowColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           side: const BorderSide(color: border),
         ),
         margin: EdgeInsets.zero,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: elevated,
+        fillColor: surface,
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
+          horizontal: 14,
           vertical: 14,
         ),
         hintStyle: const TextStyle(color: textMuted),
-        labelStyle: const TextStyle(color: textMuted),
+        labelStyle: const TextStyle(
+          color: textSecondary,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
         prefixIconColor: textMuted,
         suffixIconColor: textMuted,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: border),
+          borderRadius: BorderRadius.circular(11),
+          borderSide: const BorderSide(color: borderStrong, width: 1.5),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: border),
+          borderRadius: BorderRadius.circular(11),
+          borderSide: const BorderSide(color: borderStrong, width: 1.5),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(11),
           borderSide: const BorderSide(color: primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: error),
+          borderRadius: BorderRadius.circular(11),
+          borderSide: const BorderSide(color: error, width: 1.5),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: primary,
-          foregroundColor: const Color(0xFF042F2E),
-          minimumSize: const Size.fromHeight(48),
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(52),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: GoogleFonts.plusJakartaSans(
-            fontSize: 16,
+          textStyle: GoogleFonts.manrope(
+            fontSize: 15.5,
             fontWeight: FontWeight.w700,
+            letterSpacing: 0.01,
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: textPrimary,
+          foregroundColor: textSecondary,
           minimumSize: const Size.fromHeight(48),
-          side: const BorderSide(color: border),
+          side: const BorderSide(color: borderStrong, width: 1.5),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: GoogleFonts.manrope(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(foregroundColor: primary),
       ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return primary;
+          return Colors.transparent;
+        }),
+        checkColor: const WidgetStatePropertyAll(Colors.white),
+        side: const BorderSide(color: borderStrong, width: 1.5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+      ),
       chipTheme: ChipThemeData(
         backgroundColor: elevated,
-        selectedColor: primary.withValues(alpha: 0.2),
-        side: const BorderSide(color: border),
-        labelStyle: textTheme.labelLarge?.copyWith(color: textPrimary),
+        selectedColor: navyTint,
+        side: const BorderSide(color: borderStrong),
+        labelStyle: textTheme.labelLarge?.copyWith(color: textSecondary),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(9),
         ),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
           backgroundColor: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
-              return primary.withValues(alpha: 0.18);
+              return navyTint;
             }
-            return elevated;
+            return surface;
           }),
           foregroundColor: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
               return primary;
             }
-            return textMuted;
+            return textSecondary;
           }),
-          side: const WidgetStatePropertyAll(BorderSide(color: border)),
+          side: const WidgetStatePropertyAll(BorderSide(color: borderStrong)),
           visualDensity: VisualDensity.standard,
           padding: const WidgetStatePropertyAll(
             EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -199,14 +253,14 @@ class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surface,
-        indicatorColor: primary.withValues(alpha: 0.2),
+        indicatorColor: navyTint,
         elevation: 0,
-        height: 68,
+        height: 72,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
-          return GoogleFonts.plusJakartaSans(
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          return GoogleFonts.manrope(
+            fontSize: 11.5,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
             color: selected ? primary : textMuted,
           );
         }),
@@ -214,7 +268,7 @@ class AppTheme {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(
             color: selected ? primary : textMuted,
-            size: 22,
+            size: 21,
           );
         }),
       ),
@@ -240,12 +294,15 @@ class AppTheme {
         space: 24,
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: elevated,
-        contentTextStyle: textTheme.bodyMedium,
+        backgroundColor: textPrimary,
+        contentTextStyle: GoogleFonts.manrope(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: border),
         ),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
@@ -263,6 +320,6 @@ class AppTheme {
     );
   }
 
-  /// Kept for compatibility; app runs dark-only.
-  static ThemeData get light => dark;
+  /// Primary theme — DigiLawyer light.
+  static ThemeData get dark => light;
 }
