@@ -66,14 +66,6 @@ class LeadListPage extends HookConsumerWidget {
         title: const Text('CRM Leads'),
         actions: [
           IconButton(
-            tooltip: 'Filter leads',
-            onPressed: openFilter,
-            icon: Badge(
-              isLabelVisible: filter.hasActiveServerFilters,
-              child: const Icon(Icons.filter_list_rounded),
-            ),
-          ),
-          IconButton(
             tooltip: 'Logout',
             onPressed: () => ref.read(authNotifierProvider.notifier).logout(),
             icon: const Icon(Icons.logout_rounded),
@@ -109,12 +101,28 @@ class LeadListPage extends HookConsumerWidget {
                   },
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: searchController,
-                  decoration: const InputDecoration(
-                    hintText: 'Search by lead name',
-                    prefixIcon: Icon(Icons.search),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: searchController,
+                        decoration: const InputDecoration(
+                          hintText: 'Search by lead name',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Badge(
+                      isLabelVisible: filter.hasActiveServerFilters,
+                      child: IconButton.filledTonal(
+                        tooltip: 'Filter leads',
+                        onPressed: openFilter,
+                        icon: const Icon(Icons.filter_list_rounded),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
