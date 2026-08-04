@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:odoocrm/core/error/failures.dart';
 import 'package:odoocrm/core/utils/date_formatters.dart';
+import 'package:odoocrm/core/utils/html_text_utils.dart';
 import 'package:odoocrm/core/widgets/app_card.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
+import 'package:odoocrm/core/widgets/html_content.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
 import 'package:odoocrm/core/widgets/section_header.dart';
 import 'package:odoocrm/features/activities/presentation/providers/activity_notifier.dart';
@@ -63,56 +65,69 @@ class LeadDetailPage extends HookConsumerWidget {
     }
 
     Future<void> updateStage() async {
-      final stagesAsync = ref.read(stageNotifierProvider);
-      final stages = stagesAsync.valueOrNull;
-      if (stages == null || stages.isEmpty) {
-        await ref.read(stageNotifierProvider.future);
-      }
-      final available = ref.read(stageNotifierProvider).valueOrNull ?? [];
-      if (!context.mounted) return;
+      try {
+        final available = await ref.read(stageNotifierProvider.future);
+        if (!context.mounted) return;
 
-      final selected = await showModalBottomSheet<int>(
-        context: context,
-        builder: (context) {
-          return SafeArea(
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                const ListTile(title: Text('Update Stage')),
-                ...available.map(
-                  (stage) => ListTile(
-                    title: Text(stage.name),
-                    onTap: () => Navigator.pop(context, stage.id),
+        if (available.isEmpty) {
+          await showMessage('No stages available');
+          return;
+        }
+
+        final selected = await showModalBottomSheet<int>(
+          context: context,
+          builder: (context) {
+            return SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  const ListTile(title: Text('Update Stage')),
+                  ...available.map(
+                    (stage) => ListTile(
+                      title: Text(stage.name),
+                      onTap: () => Navigator.pop(context, stage.id),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
-      );
+                ],
+              ),
+            );
+          },
+        );
 
-      if (selected == null) return;
-      isActing.value = true;
-      final error = await ref
-          .read(leadDetailNotifierProvider(leadId).notifier)
-          .updateStage(selected);
-      isActing.value = false;
-      ref.invalidate(leadNotifierProvider);
-      await showMessage(error ?? 'Stage updated');
+        if (selected == null) return;
+        isActing.value = true;
+        final error = await ref
+            .read(leadDetailNotifierProvider(leadId).notifier)
+            .updateStage(selected);
+        isActing.value = false;
+        ref.invalidate(leadNotifierProvider);
+        await showMessage(error ?? 'Stage updated');
+      } catch (e) {
+        isActing.value = false;
+        final message = e is Failure ? e.message : e.toString();
+        await showMessage(message);
+      }
     }
 
     Future<void> updateRemark(LeadDetailEntity lead) async {
-      final controller = TextEditingController(text: lead.description ?? '');
+      final controller = TextEditingController(
+        text: HtmlTextUtils.toPlainText(lead.description),
+      );
       final saved = await showDialog<String>(
         context: context,
         builder: (context) {
           return AlertDialog(
             title: const Text('Update Remark'),
-            content: TextField(
-              controller: controller,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                hintText: 'Enter description / remark',
+            content: SizedBox(
+              width: double.maxFinite,
+              child: TextField(
+                controller: controller,
+                maxLines: 8,
+                minLines: 4,
+                decoration: const InputDecoration(
+                  hintText: 'Enter description / remark',
+                  alignLabelWithHint: true,
+                ),
               ),
             ),
             actions: [
@@ -121,7 +136,10 @@ class LeadDetailPage extends HookConsumerWidget {
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(context, controller.text),
+                onPressed: () => Navigator.pop(
+                  context,
+                  HtmlTextUtils.toHtml(controller.text),
+                ),
                 child: const Text('Save'),
               ),
             ],
@@ -250,11 +268,7 @@ class LeadDetailPage extends HookConsumerWidget {
                       const SectionHeader(title: 'Description'),
                       const SizedBox(height: 8),
                       AppCard(
-                        child: Text(
-                          lead.description?.isNotEmpty == true
-                              ? lead.description!
-                              : 'No description',
-                        ),
+                        child: HtmlContent(html: lead.description),
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -294,6 +308,7 @@ class LeadDetailPage extends HookConsumerWidget {
               ),
               _StickyBottomBar(
                 isLoading: isActing.value,
+                showAssign: lead.assignedUser?.id != currentUser?.id,
                 onCall: () => callCustomer(lead),
                 onAssign: assignToMe,
               ),
@@ -442,11 +457,13 @@ class _StickyBottomBar extends StatelessWidget {
     required this.onCall,
     required this.onAssign,
     required this.isLoading,
+    required this.showAssign,
   });
 
   final VoidCallback onCall;
   final VoidCallback onAssign;
   final bool isLoading;
+  final bool showAssign;
 
   @override
   Widget build(BuildContext context) {
@@ -466,20 +483,22 @@ class _StickyBottomBar extends StatelessWidget {
                   label: const Text('Call Customer'),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: isLoading ? null : onAssign,
-                  icon: isLoading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.person_add_alt_1_outlined),
-                  label: const Text('Assign To Me'),
+              if (showAssign) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: isLoading ? null : onAssign,
+                    icon: isLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.person_add_alt_1_outlined),
+                    label: const Text('Assign To Me'),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),

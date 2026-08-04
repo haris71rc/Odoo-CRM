@@ -10,6 +10,7 @@ class StageRemoteDatasource {
   final DioClient _dioClient;
 
   Future<List<StageDto>> searchRead() async {
+    // crm.stage has no company_id field — do not apply AppEnvironment domain.
     final request = JsonRpcRequest.callKw(
       model: 'crm.stage',
       method: 'search_read',

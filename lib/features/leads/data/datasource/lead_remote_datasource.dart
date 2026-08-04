@@ -1,4 +1,5 @@
 import 'package:odoocrm/core/constants/app_constants.dart';
+import 'package:odoocrm/core/constants/app_environment.dart';
 import 'package:odoocrm/core/error/failures.dart';
 import 'package:odoocrm/core/network/dio_client.dart';
 import 'package:odoocrm/core/network/json_rpc_request.dart';
@@ -51,10 +52,10 @@ class LeadRemoteDatasource {
     DateTime? startDate,
     DateTime? endDate,
   }) async {
-    final domain = <List<dynamic>>[];
+    final extra = <List<dynamic>>[];
 
     if (startDate != null) {
-      domain.add(['create_date', '>=', DateFormatters.toApiDate(startDate)]);
+      extra.add(['create_date', '>=', DateFormatters.toApiDate(startDate)]);
     }
     if (endDate != null) {
       final endOfDay = DateTime(
@@ -65,8 +66,10 @@ class LeadRemoteDatasource {
         59,
         59,
       );
-      domain.add(['create_date', '<=', DateFormatters.toApiDate(endOfDay)]);
+      extra.add(['create_date', '<=', DateFormatters.toApiDate(endOfDay)]);
     }
+
+    final domain = AppEnvironment.mergeDomain(extra);
 
     final request = JsonRpcRequest.callKw(
       model: 'crm.lead',

@@ -2,24 +2,52 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "odoocrm",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart"
-    },
-    {
-      "name": "odoocrm (profile mode)",
+      "name": "odoocrm (prod)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
-      "flutterMode": "profile"
+      "toolArgs": [
+        "--dart-define=APP_ENV=prod"
+      ]
     },
     {
-      "name": "odoocrm (release mode)",
+      "name": "odoocrm (dev)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
-      "flutterMode": "release"
+      "toolArgs": [
+        "--dart-define=APP_ENV=dev"
+      ]
+    },
+    {
+      "name": "odoocrm (prod · profile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "profile",
+      "toolArgs": [
+        "--dart-define=APP_ENV=prod"
+      ]
+    },
+    {
+      "name": "odoocrm (dev · profile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "profile",
+      "toolArgs": [
+        "--dart-define=APP_ENV=dev"
+      ]
+    },
+    {
+      "name": "odoocrm (prod · release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "release",
+      "toolArgs": [
+        "--dart-define=APP_ENV=prod"
+      ]
     }
   ]
 }
