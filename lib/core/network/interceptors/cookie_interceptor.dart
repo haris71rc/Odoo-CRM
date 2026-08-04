@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:odoocrm/core/constants/app_constants.dart';
+import 'package:odoocrm/core/constants/app_environment.dart';
 
 class CookieInterceptor extends QueuedInterceptor {
   CookieInterceptor(this._secureStorage);
@@ -16,7 +17,12 @@ class CookieInterceptor extends QueuedInterceptor {
       key: AppConstants.sessionIdKey,
     );
     if (sessionId != null && sessionId.isNotEmpty) {
-      options.headers['Cookie'] = 'session_id=$sessionId';
+      final cookieParts = <String>['session_id=$sessionId'];
+      final companyIds = AppEnvironment.allowedCompanyIds;
+      if (companyIds.isNotEmpty) {
+        cookieParts.add('cids=${companyIds.join(',')}');
+      }
+      options.headers['Cookie'] = cookieParts.join('; ');
     }
     handler.next(options);
   }

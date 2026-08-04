@@ -6,6 +6,8 @@ class AppConstants {
 
   static const String authenticatePath = '/web/session/authenticate';
   static const String callKwPath = '/web/dataset/call_kw';
+  static const String mailMessagePostPath = '/mail/message/post';
+  static const String mailThreadMessagesPath = '/mail/thread/messages';
 
   static const String sessionIdKey = 'session_id';
   static const String uidKey = 'uid';

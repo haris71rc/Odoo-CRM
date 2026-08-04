@@ -10,9 +10,9 @@ import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/html_content.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
 import 'package:odoocrm/core/widgets/section_header.dart';
-import 'package:odoocrm/features/activities/presentation/providers/activity_notifier.dart';
-import 'package:odoocrm/features/activities/presentation/widgets/recent_activities_section.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
+import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
+import 'package:odoocrm/features/chatter/presentation/widgets/timeline_section.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
@@ -74,6 +74,35 @@ class LeadDetailPage extends HookConsumerWidget {
           return;
         }
 
+        // Keep the bottom-sheet order aligned with Odoo UX:
+        // "Won" and "Lost" at the top, everything else after (by sequence).
+        bool isWonStage(dynamic stage) {
+          final name = (stage.name as String?)?.toLowerCase() ?? '';
+          return stage.isWon == true ||
+              name == 'won' ||
+              name.contains('closed won');
+        }
+
+        bool isLostStage(dynamic stage) {
+          final name = (stage.name as String?)?.toLowerCase() ?? '';
+          return name == 'lost' || name.contains('closed lost') || name.endsWith('lost');
+        }
+
+        final sortedStages = [...available]
+          ..sort((a, b) {
+            final pa = isWonStage(a) ? 0 : (isLostStage(a) ? 1 : 2);
+            final pb = isWonStage(b) ? 0 : (isLostStage(b) ? 1 : 2);
+            if (pa != pb) return pa.compareTo(pb);
+
+            // Preserve existing Odoo ordering for non-terminal stages.
+            final sa = a.sequence ?? 1 << 30;
+            final sb = b.sequence ?? 1 << 30;
+            final seq = sa.compareTo(sb);
+            if (seq != 0) return seq;
+
+            return a.name.compareTo(b.name);
+          });
+
         final selected = await showModalBottomSheet<int>(
           context: context,
           builder: (context) {
@@ -82,7 +111,7 @@ class LeadDetailPage extends HookConsumerWidget {
                 shrinkWrap: true,
                 children: [
                   const ListTile(title: Text('Update Stage')),
-                  ...available.map(
+                  ...sortedStages.map(
                     (stage) => ListTile(
                       title: Text(stage.name),
                       onTap: () => Navigator.pop(context, stage.id),
@@ -156,59 +185,6 @@ class LeadDetailPage extends HookConsumerWidget {
       await showMessage(error ?? 'Remark updated');
     }
 
-    Future<void> addActivity() async {
-      final summaryController = TextEditingController();
-      final noteController = TextEditingController();
-
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Create Activity'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: summaryController,
-                  decoration: const InputDecoration(labelText: 'Summary'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: noteController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Note'),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Create'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (confirmed != true || summaryController.text.trim().isEmpty) return;
-
-      isActing.value = true;
-      final error =
-          await ref.read(activityNotifierProvider(leadId).notifier).createActivity(
-                summary: summaryController.text.trim(),
-                note: noteController.text.trim().isEmpty
-                    ? null
-                    : noteController.text.trim(),
-                dateDeadline: DateTime.now().add(const Duration(days: 1)),
-              );
-      isActing.value = false;
-      await showMessage(error ?? 'Activity created');
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Lead Detail'),
@@ -248,7 +224,7 @@ class LeadDetailPage extends HookConsumerWidget {
                         .read(leadDetailNotifierProvider(leadId).notifier)
                         .refresh();
                     await ref
-                        .read(activityNotifierProvider(leadId).notifier)
+                        .read(chatterNotifierProvider(leadId).notifier)
                         .refresh();
                   },
                   child: ListView(
@@ -298,10 +274,7 @@ class LeadDetailPage extends HookConsumerWidget {
                         ],
                       ),
                       const Divider(),
-                      RecentActivitiesSection(
-                        leadId: leadId,
-                        onAdd: addActivity,
-                      ),
+                      TimelineSection(leadId: leadId),
                     ],
                   ),
                 ),

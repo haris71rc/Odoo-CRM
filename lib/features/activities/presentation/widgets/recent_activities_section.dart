@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:odoocrm/core/error/failures.dart';
 import 'package:odoocrm/core/utils/date_formatters.dart';
 import 'package:odoocrm/core/widgets/empty_view.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
 import 'package:odoocrm/features/activities/domain/entities/activity_entity.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:odoocrm/core/error/failures.dart';
 import 'package:odoocrm/features/activities/presentation/providers/activity_notifier.dart';
 
 class RecentActivitiesSection extends ConsumerWidget {
@@ -57,13 +57,18 @@ class RecentActivitiesSection extends ConsumerWidget {
           data: (activities) {
             if (activities.isEmpty) {
               return const EmptyView(
-                message: 'No activities yet',
+                message: 'No Activities Scheduled',
                 icon: Icons.event_note_outlined,
               );
             }
             return Column(
               children: activities
-                  .map((activity) => _ActivityTile(activity: activity))
+                  .map(
+                    (activity) => _ActivityTile(
+                      activity: activity,
+                      onMarkDone: () => _markDone(context, ref, activity),
+                    ),
+                  )
                   .toList(),
             );
           },
@@ -71,12 +76,33 @@ class RecentActivitiesSection extends ConsumerWidget {
       ],
     );
   }
+
+  Future<void> _markDone(
+    BuildContext context,
+    WidgetRef ref,
+    ActivityEntity activity,
+  ) async {
+    final error = await ref
+        .read(activityNotifierProvider(leadId).notifier)
+        .completeActivity(activity.id);
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Activity marked as done'),
+      ),
+    );
+  }
 }
 
 class _ActivityTile extends StatelessWidget {
-  const _ActivityTile({required this.activity});
+  const _ActivityTile({
+    required this.activity,
+    required this.onMarkDone,
+  });
 
   final ActivityEntity activity;
+  final VoidCallback onMarkDone;
 
   @override
   Widget build(BuildContext context) {
@@ -84,22 +110,62 @@ class _ActivityTile extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.primaryContainer,
-          child: Icon(
-            Icons.event_available_outlined,
-            color: theme.colorScheme.onPrimaryContainer,
-          ),
-        ),
-        title: Text(activity.summary),
-        subtitle: Text(
-          [
-            if (activity.activityType != null) activity.activityType!,
-            if (activity.dateDeadline != null)
-              DateFormatters.formatDate(activity.dateDeadline),
-            if (activity.userName != null) activity.userName!,
-          ].join(' • '),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  backgroundColor: theme.colorScheme.primaryContainer,
+                  child: Icon(
+                    Icons.event_available_outlined,
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        activity.summary,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (activity.activityType != null)
+                        Text(
+                          'Type: ${activity.activityType}',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      if (activity.dateDeadline != null)
+                        Text(
+                          'Due: ${DateFormatters.formatDate(activity.dateDeadline)}',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      if (activity.userName != null)
+                        Text(
+                          'Assigned: ${activity.userName}',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onMarkDone,
+                icon: const Icon(Icons.check_circle_outline, size: 18),
+                label: const Text('Mark Done'),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -17,7 +17,9 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     );
   }
 
-  Future<String?> assignToMe(int userId) async {
+  Future<String?> assignToMe(int userId) => assignToUser(userId);
+
+  Future<String?> assignToUser(int userId) async {
     final repository = ref.read(leadRepositoryProvider);
     final result = await repository.assignToUser(
       leadId: leadId,

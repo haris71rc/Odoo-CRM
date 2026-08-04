@@ -24,7 +24,7 @@ final activityRepositoryProvider = Provider<ActivityRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActivityRepositoryRef = ProviderRef<ActivityRepository>;
-String _$activityNotifierHash() => r'13a69c0a5e4fe294c5109f266e84a0df56e4fb75';
+String _$activityNotifierHash() => r'8cf63543aeaf0e24ba43b7468b0a608103816954';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -191,5 +191,26 @@ class _ActivityNotifierProviderElement
   int get leadId => (origin as ActivityNotifierProvider).leadId;
 }
 
+String _$activityTypesNotifierHash() =>
+    r'963f7726d56916af7f028009d1b8573d8409a849';
+
+/// See also [ActivityTypesNotifier].
+@ProviderFor(ActivityTypesNotifier)
+final activityTypesNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<
+      ActivityTypesNotifier,
+      List<ActivityTypeEntity>
+    >.internal(
+      ActivityTypesNotifier.new,
+      name: r'activityTypesNotifierProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$activityTypesNotifierHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$ActivityTypesNotifier =
+    AutoDisposeAsyncNotifier<List<ActivityTypeEntity>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

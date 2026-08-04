@@ -15,6 +15,12 @@ class AppEnvironment {
   /// Company used to scope Dev data.
   static const int devCompanyId = 6;
 
+  /// Companies allowed in Odoo request context / cookie `cids`.
+  static List<int> get allowedCompanyIds {
+    if (isDev) return const [devCompanyId];
+    return const [];
+  }
+
   /// Base Odoo domain for the active environment.
   ///
   /// Dev:

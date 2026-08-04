@@ -9,13 +9,15 @@ part of 'json_rpc_request.dart';
 _JsonRpcRequest _$JsonRpcRequestFromJson(Map<String, dynamic> json) =>
     _JsonRpcRequest(
       jsonrpc: json['jsonrpc'] as String? ?? '2.0',
+      method: json['method'] as String? ?? 'call',
       params: json['params'] as Map<String, dynamic>,
-      id: (json['id'] as num?)?.toInt() ?? null,
+      id: (json['id'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$JsonRpcRequestToJson(_JsonRpcRequest instance) =>
     <String, dynamic>{
       'jsonrpc': instance.jsonrpc,
+      'method': instance.method,
       'params': instance.params,
       'id': instance.id,
     };

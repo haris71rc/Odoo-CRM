@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$JsonRpcRequest {
 
- String get jsonrpc; Map<String, dynamic> get params; int? get id;
+ String get jsonrpc; String get method; Map<String, dynamic> get params; int? get id;
 /// Create a copy of JsonRpcRequest
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $JsonRpcRequestCopyWith<JsonRpcRequest> get copyWith => _$JsonRpcRequestCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is JsonRpcRequest&&(identical(other.jsonrpc, jsonrpc) || other.jsonrpc == jsonrpc)&&const DeepCollectionEquality().equals(other.params, params)&&(identical(other.id, id) || other.id == id));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is JsonRpcRequest&&(identical(other.jsonrpc, jsonrpc) || other.jsonrpc == jsonrpc)&&(identical(other.method, method) || other.method == method)&&const DeepCollectionEquality().equals(other.params, params)&&(identical(other.id, id) || other.id == id));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,jsonrpc,const DeepCollectionEquality().hash(params),id);
+int get hashCode => Object.hash(runtimeType,jsonrpc,method,const DeepCollectionEquality().hash(params),id);
 
 @override
 String toString() {
-  return 'JsonRpcRequest(jsonrpc: $jsonrpc, params: $params, id: $id)';
+  return 'JsonRpcRequest(jsonrpc: $jsonrpc, method: $method, params: $params, id: $id)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $JsonRpcRequestCopyWith<$Res>  {
   factory $JsonRpcRequestCopyWith(JsonRpcRequest value, $Res Function(JsonRpcRequest) _then) = _$JsonRpcRequestCopyWithImpl;
 @useResult
 $Res call({
- String jsonrpc, Map<String, dynamic> params, int? id
+ String jsonrpc, String method, Map<String, dynamic> params, int? id
 });
 
 
@@ -65,9 +65,10 @@ class _$JsonRpcRequestCopyWithImpl<$Res>
 
 /// Create a copy of JsonRpcRequest
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? jsonrpc = null,Object? params = null,Object? id = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? jsonrpc = null,Object? method = null,Object? params = null,Object? id = freezed,}) {
   return _then(_self.copyWith(
 jsonrpc: null == jsonrpc ? _self.jsonrpc : jsonrpc // ignore: cast_nullable_to_non_nullable
+as String,method: null == method ? _self.method : method // ignore: cast_nullable_to_non_nullable
 as String,params: null == params ? _self.params : params // ignore: cast_nullable_to_non_nullable
 as Map<String, dynamic>,id: freezed == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int?,
@@ -155,10 +156,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String jsonrpc,  Map<String, dynamic> params,  int? id)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String jsonrpc,  String method,  Map<String, dynamic> params,  int? id)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _JsonRpcRequest() when $default != null:
-return $default(_that.jsonrpc,_that.params,_that.id);case _:
+return $default(_that.jsonrpc,_that.method,_that.params,_that.id);case _:
   return orElse();
 
 }
@@ -176,10 +177,10 @@ return $default(_that.jsonrpc,_that.params,_that.id);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String jsonrpc,  Map<String, dynamic> params,  int? id)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String jsonrpc,  String method,  Map<String, dynamic> params,  int? id)  $default,) {final _that = this;
 switch (_that) {
 case _JsonRpcRequest():
-return $default(_that.jsonrpc,_that.params,_that.id);case _:
+return $default(_that.jsonrpc,_that.method,_that.params,_that.id);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -196,10 +197,10 @@ return $default(_that.jsonrpc,_that.params,_that.id);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String jsonrpc,  Map<String, dynamic> params,  int? id)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String jsonrpc,  String method,  Map<String, dynamic> params,  int? id)?  $default,) {final _that = this;
 switch (_that) {
 case _JsonRpcRequest() when $default != null:
-return $default(_that.jsonrpc,_that.params,_that.id);case _:
+return $default(_that.jsonrpc,_that.method,_that.params,_that.id);case _:
   return null;
 
 }
@@ -211,10 +212,11 @@ return $default(_that.jsonrpc,_that.params,_that.id);case _:
 @JsonSerializable()
 
 class _JsonRpcRequest implements JsonRpcRequest {
-  const _JsonRpcRequest({this.jsonrpc = '2.0', required final  Map<String, dynamic> params, this.id = null}): _params = params;
+  const _JsonRpcRequest({this.jsonrpc = '2.0', this.method = 'call', required final  Map<String, dynamic> params, this.id}): _params = params;
   factory _JsonRpcRequest.fromJson(Map<String, dynamic> json) => _$JsonRpcRequestFromJson(json);
 
 @override@JsonKey() final  String jsonrpc;
+@override@JsonKey() final  String method;
  final  Map<String, dynamic> _params;
 @override Map<String, dynamic> get params {
   if (_params is EqualUnmodifiableMapView) return _params;
@@ -222,7 +224,7 @@ class _JsonRpcRequest implements JsonRpcRequest {
   return EqualUnmodifiableMapView(_params);
 }
 
-@override@JsonKey() final  int? id;
+@override final  int? id;
 
 /// Create a copy of JsonRpcRequest
 /// with the given fields replaced by the non-null parameter values.
@@ -237,16 +239,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _JsonRpcRequest&&(identical(other.jsonrpc, jsonrpc) || other.jsonrpc == jsonrpc)&&const DeepCollectionEquality().equals(other._params, _params)&&(identical(other.id, id) || other.id == id));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _JsonRpcRequest&&(identical(other.jsonrpc, jsonrpc) || other.jsonrpc == jsonrpc)&&(identical(other.method, method) || other.method == method)&&const DeepCollectionEquality().equals(other._params, _params)&&(identical(other.id, id) || other.id == id));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,jsonrpc,const DeepCollectionEquality().hash(_params),id);
+int get hashCode => Object.hash(runtimeType,jsonrpc,method,const DeepCollectionEquality().hash(_params),id);
 
 @override
 String toString() {
-  return 'JsonRpcRequest(jsonrpc: $jsonrpc, params: $params, id: $id)';
+  return 'JsonRpcRequest(jsonrpc: $jsonrpc, method: $method, params: $params, id: $id)';
 }
 
 
@@ -257,7 +259,7 @@ abstract mixin class _$JsonRpcRequestCopyWith<$Res> implements $JsonRpcRequestCo
   factory _$JsonRpcRequestCopyWith(_JsonRpcRequest value, $Res Function(_JsonRpcRequest) _then) = __$JsonRpcRequestCopyWithImpl;
 @override @useResult
 $Res call({
- String jsonrpc, Map<String, dynamic> params, int? id
+ String jsonrpc, String method, Map<String, dynamic> params, int? id
 });
 
 
@@ -274,9 +276,10 @@ class __$JsonRpcRequestCopyWithImpl<$Res>
 
 /// Create a copy of JsonRpcRequest
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? jsonrpc = null,Object? params = null,Object? id = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? jsonrpc = null,Object? method = null,Object? params = null,Object? id = freezed,}) {
   return _then(_JsonRpcRequest(
 jsonrpc: null == jsonrpc ? _self.jsonrpc : jsonrpc // ignore: cast_nullable_to_non_nullable
+as String,method: null == method ? _self.method : method // ignore: cast_nullable_to_non_nullable
 as String,params: null == params ? _self._params : params // ignore: cast_nullable_to_non_nullable
 as Map<String, dynamic>,id: freezed == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int?,
