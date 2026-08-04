@@ -17,6 +17,8 @@ class LeadCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Card(
+      elevation: 2,
+      shadowColor: Colors.black.withValues(alpha: 0.18),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
@@ -68,6 +70,7 @@ class LeadCard extends StatelessWidget {
                     _Meta(
                       icon: Icons.person_outline,
                       label: lead.assignedUser!.name,
+                      bold: true,
                     ),
                   _Meta(
                     icon: Icons.calendar_today_outlined,
@@ -84,10 +87,15 @@ class LeadCard extends StatelessWidget {
 }
 
 class _Meta extends StatelessWidget {
-  const _Meta({required this.icon, required this.label});
+  const _Meta({
+    required this.icon,
+    required this.label,
+    this.bold = false,
+  });
 
   final IconData icon;
   final String label;
+  final bool bold;
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +109,7 @@ class _Meta extends StatelessWidget {
           label,
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
           ),
         ),
       ],
