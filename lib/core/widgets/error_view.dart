@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:odoocrm/core/theme/app_theme.dart';
 
 class ErrorView extends StatelessWidget {
   const ErrorView({
@@ -20,12 +21,23 @@ class ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.error_outline_rounded,
-              size: 48,
-              color: theme.colorScheme.error,
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: AppTheme.error.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppTheme.error.withValues(alpha: 0.35),
+                ),
+              ),
+              child: const Icon(
+                Icons.error_outline_rounded,
+                size: 32,
+                color: AppTheme.error,
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,

@@ -11,7 +11,7 @@ class ChatterMessageBody extends StatelessWidget {
 
   final String? html;
 
-  static const Color _trackingNewValueColor = Color(0xFF008784);
+  static const Color _trackingNewValueColor = Color(0xFF2DD4BF);
 
   @override
   Widget build(BuildContext context) {

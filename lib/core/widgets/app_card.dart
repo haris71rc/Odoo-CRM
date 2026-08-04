@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:odoocrm/core/theme/app_theme.dart';
 
 class AppCard extends StatelessWidget {
   const AppCard({
@@ -6,27 +7,58 @@ class AppCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.onTap,
+    this.accentColor,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final VoidCallback? onTap;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
-    final card = Card(
-      child: Padding(
-        padding: padding,
-        child: child,
+    final card = Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (accentColor != null)
+                Container(width: 4, color: accentColor),
+              Expanded(
+                child: Padding(
+                  padding: padding,
+                  child: child,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
 
     if (onTap == null) return card;
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: card,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: card,
+      ),
     );
   }
 }

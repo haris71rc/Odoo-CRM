@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:odoocrm/core/error/failures.dart';
+import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/core/utils/date_formatters.dart';
 import 'package:odoocrm/core/widgets/empty_view.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
+import 'package:odoocrm/core/widgets/section_header.dart';
 import 'package:odoocrm/features/chatter/domain/entities/chatter_message_entity.dart';
 import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
 import 'package:odoocrm/features/chatter/presentation/widgets/chatter_avatar.dart';
@@ -20,31 +22,21 @@ class TimelineSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final messagesAsync = ref.watch(chatterNotifierProvider(leadId));
-    final theme = Theme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Timeline',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+        SectionHeader(
+          title: 'Timeline',
+          trailing: TextButton.icon(
+            onPressed: () => showLogNoteSheet(
+              context: context,
+              ref: ref,
+              leadId: leadId,
             ),
-            TextButton.icon(
-              onPressed: () => showLogNoteSheet(
-                context: context,
-                ref: ref,
-                leadId: leadId,
-              ),
-              icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
-              label: const Text('Log Note'),
-            ),
-          ],
+            icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
+            label: const Text('Log Note'),
+          ),
         ),
         const SizedBox(height: 8),
         messagesAsync.when(
@@ -106,24 +98,23 @@ class _DateSeparator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final lineColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.8);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
         children: [
-          Expanded(child: Divider(color: lineColor, height: 1)),
+          const Expanded(child: Divider(color: AppTheme.border, height: 1)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Text(
               label,
               style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w500,
+                color: AppTheme.textMuted,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          Expanded(child: Divider(color: lineColor, height: 1)),
+          const Expanded(child: Divider(color: AppTheme.border, height: 1)),
         ],
       ),
     );
@@ -166,21 +157,21 @@ class _TimelineMessage extends StatelessWidget {
                       ),
                     ),
                     if (message.isNote)
-                      Icon(
+                      const Icon(
                         Icons.sticky_note_2_outlined,
                         size: 14,
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: Color(0xFFFBBF24),
                       ),
                     if (message.isDiscussion)
-                      Icon(
+                      const Icon(
                         Icons.mail_outline,
                         size: 14,
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: Color(0xFF34D399),
                       ),
                     Text(
                       DateFormatters.formatChatterDateTime(message.date),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: AppTheme.textMuted,
                       ),
                     ),
                   ],
@@ -216,21 +207,30 @@ class _MessageBody extends StatelessWidget {
 
   final ChatterMessageEntity message;
 
-  Color? _backgroundFor(ThemeData theme) {
+  Color? _backgroundFor() {
     if (message.isDiscussion) {
-      return const Color(0xFFE8F5E9);
+      return const Color(0xFF10241C);
     }
     if (message.isNote) {
-      return const Color(0xFFFFF3E0);
+      return const Color(0xFF2A2114);
+    }
+    return null;
+  }
+
+  Color? _borderFor() {
+    if (message.isDiscussion) {
+      return const Color(0xFF1F4D3A);
+    }
+    if (message.isNote) {
+      return const Color(0xFF5C4420);
     }
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final background = _backgroundFor(theme);
-
+    final background = _backgroundFor();
+    final border = _borderFor();
     final content = ChatterMessageBody(html: message.body);
 
     if (background == null) {
@@ -240,12 +240,8 @@ class _MessageBody extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: message.isDiscussion
-              ? const Color(0xFFC8E6C9)
-              : const Color(0xFFFFE0B2),
-        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border ?? AppTheme.border),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

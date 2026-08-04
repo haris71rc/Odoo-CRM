@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:odoocrm/core/theme/app_theme.dart';
 
 class EmptyView extends StatelessWidget {
   const EmptyView({
@@ -20,13 +21,22 @@ class EmptyView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: theme.colorScheme.outline),
-            const SizedBox(height: 12),
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: AppTheme.elevated,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Icon(icon, size: 32, color: AppTheme.primary),
+            ),
+            const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: AppTheme.textMuted,
               ),
             ),
           ],

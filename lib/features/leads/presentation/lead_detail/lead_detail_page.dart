@@ -3,6 +3,8 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:odoocrm/core/error/failures.dart';
+import 'package:odoocrm/core/theme/app_theme.dart';
+import 'package:odoocrm/core/theme/stage_colors.dart';
 import 'package:odoocrm/core/utils/date_formatters.dart';
 import 'package:odoocrm/core/utils/html_text_utils.dart';
 import 'package:odoocrm/core/widgets/app_card.dart';
@@ -105,16 +107,61 @@ class LeadDetailPage extends HookConsumerWidget {
 
         final selected = await showModalBottomSheet<int>(
           context: context,
+          showDragHandle: false,
           builder: (context) {
+            final theme = Theme.of(context);
             return SafeArea(
-              child: ListView(
-                shrinkWrap: true,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const ListTile(title: Text('Update Stage')),
-                  ...sortedStages.map(
-                    (stage) => ListTile(
-                      title: Text(stage.name),
-                      onTap: () => Navigator.pop(context, stage.id),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppTheme.border,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 4, 4),
+                    child: SizedBox(
+                      height: 48,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Text(
+                            'Update Stage',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: IconButton(
+                              tooltip: 'Close',
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: sortedStages.length,
+                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final stage = sortedStages[index];
+                        return ListTile(
+                          title: Text(stage.name),
+                          onTap: () => Navigator.pop(context, stage.id),
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -251,6 +298,7 @@ class LeadDetailPage extends HookConsumerWidget {
                         children: [
                           Expanded(
                             child: AppCard(
+                              accentColor: AppTheme.primary,
                               child: _Metric(
                                 label: 'Revenue',
                                 value: lead.expectedRevenue == null
@@ -263,6 +311,7 @@ class LeadDetailPage extends HookConsumerWidget {
                           const SizedBox(width: 12),
                           Expanded(
                             child: AppCard(
+                              accentColor: AppTheme.secondary,
                               child: _Metric(
                                 label: 'Probability',
                                 value: lead.probability == null
@@ -273,6 +322,7 @@ class LeadDetailPage extends HookConsumerWidget {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 8),
                       const Divider(),
                       TimelineSection(leadId: leadId),
                     ],
@@ -314,8 +364,11 @@ class _HeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final stageName = lead.stage?.name;
+    final stageColor = StageColors.forName(stageName);
 
     return AppCard(
+      accentColor: stageColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -324,7 +377,8 @@ class _HeaderCard extends StatelessWidget {
                 ? lead.partnerName!
                 : lead.name,
             style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
             ),
           ),
           if (lead.partnerName != null && lead.partnerName != lead.name) ...[
@@ -332,13 +386,13 @@ class _HeaderCard extends StatelessWidget {
             Text(
               lead.name,
               style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: AppTheme.textMuted,
               ),
             ),
           ],
           const SizedBox(height: 16),
           Wrap(
-            spacing: 16,
+            spacing: 10,
             runSpacing: 10,
             children: [
               if (lead.phone != null || lead.mobile != null)
@@ -351,23 +405,48 @@ class _HeaderCard extends StatelessWidget {
                   icon: Icons.email_outlined,
                   label: lead.email!,
                 ),
-              if (lead.stage != null)
-                Chip(
-                  avatar: const Icon(Icons.flag_outlined, size: 16),
-                  label: Text(lead.stage!.name),
+              if (stageName != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: StageColors.backgroundFor(stageName),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: stageColor.withValues(alpha: 0.45),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.flag_outlined, size: 14, color: stageColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        stageName,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: stageColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Text(
             'Assigned: ${lead.assignedUser?.name ?? 'Unassigned'}',
-            style: theme.textTheme.bodyMedium,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             'Created: ${DateFormatters.formatDateTime(lead.createdDate)}',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+              color: AppTheme.textMuted,
             ),
           ),
         ],
@@ -384,13 +463,26 @@ class _InfoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16),
-        const SizedBox(width: 6),
-        Text(label),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.elevated,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppTheme.secondary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppTheme.textPrimary,
+                ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -410,14 +502,15 @@ class _Metric extends StatelessWidget {
         Text(
           label,
           style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+            color: AppTheme.textMuted,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Text(
           value,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
           ),
         ),
       ],
@@ -441,38 +534,45 @@ class _StickyBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      elevation: 8,
-      color: Theme.of(context).colorScheme.surface,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: isLoading ? null : onCall,
-                  icon: const Icon(Icons.call_outlined),
-                  label: const Text('Call Customer'),
-                ),
-              ),
-              if (showAssign) ...[
-                const SizedBox(width: 12),
+      color: AppTheme.surface,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppTheme.border)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              children: [
                 Expanded(
-                  child: FilledButton.icon(
-                    onPressed: isLoading ? null : onAssign,
-                    icon: isLoading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.person_add_alt_1_outlined),
-                    label: const Text('Assign To Me'),
+                  child: OutlinedButton.icon(
+                    onPressed: isLoading ? null : onCall,
+                    icon: const Icon(Icons.call_outlined),
+                    label: const Text('Call Customer'),
                   ),
                 ),
+                if (showAssign) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: isLoading ? null : onAssign,
+                      icon: isLoading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF042F2E),
+                              ),
+                            )
+                          : const Icon(Icons.person_add_alt_1_outlined),
+                      label: const Text('Assign To Me'),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

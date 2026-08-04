@@ -9,7 +9,7 @@ class ChatterTrackingValues extends StatelessWidget {
 
   final List<TrackingValueEntity> values;
 
-  static const Color _newValueColor = Color(0xFF008784);
+  static const Color _newValueColor = Color(0xFF2DD4BF);
 
   @override
   Widget build(BuildContext context) {
