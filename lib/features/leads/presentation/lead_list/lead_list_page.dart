@@ -31,6 +31,11 @@ class LeadListPage extends HookConsumerWidget {
     return n == 'lost' || n.contains('closed lost') || n.endsWith(' lost');
   }
 
+  bool _isFollowUp(String? name) {
+    final n = name?.toLowerCase() ?? '';
+    return n.contains('follow');
+  }
+
   bool _isHighPriority(LeadEntity lead) {
     final p = lead.priority ?? '';
     return p == '2' || p == '3' || p.toLowerCase().contains('high');
@@ -58,7 +63,8 @@ class LeadListPage extends HookConsumerWidget {
               .toList();
         }
       case LeadPipelineTab.followup:
-        filtered = filtered.where(_isHighPriority).toList();
+        filtered =
+            filtered.where((l) => _isFollowUp(l.stage?.name)).toList();
       case LeadPipelineTab.won:
         filtered = filtered.where((l) => _isWon(l.stage?.name)).toList();
       case LeadPipelineTab.lost:
@@ -282,7 +288,7 @@ class LeadListPage extends HookConsumerWidget {
                     filter: filter,
                     leads: leadsAsync.valueOrNull ?? const [],
                     currentUserId: currentUser?.id,
-                    isHighPriority: _isHighPriority,
+                    isFollowUp: _isFollowUp,
                     isWon: _isWon,
                     isLost: _isLost,
                   ),
@@ -319,59 +325,29 @@ class LeadListPage extends HookConsumerWidget {
                     }
 
                     return RefreshIndicator(
-                      key: ValueKey('list-${filtered.length}'),
-                      color: AppTheme.navy,
-                      onRefresh: () =>
-                          ref.read(leadNotifierProvider.notifier).refresh(),
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 96),
-                        itemCount: filtered.length +
-                            (filter.pipelineTab == LeadPipelineTab.followup
-                                ? 1
-                                : 0),
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          if (filter.pipelineTab == LeadPipelineTab.followup &&
-                              index == 0) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 13,
-                                vertical: 11,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.followUpBg,
-                                borderRadius: BorderRadius.circular(12),
-                                border:
-                                    Border.all(color: AppTheme.followUpBorder),
-                              ),
-                              child: const Text(
-                                'Follow-ups ignore the date filter — a lead stays here until you call it.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.followUpFg,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.5,
-                                ),
-                              ),
-                            );
-                          }
-                          final leadIndex =
-                              filter.pipelineTab == LeadPipelineTab.followup
-                                  ? index - 1
-                                  : index;
-                          final lead = filtered[leadIndex];
-                          return LeadCard(
-                            lead: lead,
-                            isWon: _isWon(lead.stage?.name),
-                            isLost: _isLost(lead.stage?.name),
-                            hasFollowUp: _isHighPriority(lead),
-                            onTap: () => context.push('/leads/${lead.id}'),
-                            onWon: () => markStage(lead, won: true),
-                            onLost: () => markStage(lead, won: false),
-                          );
-                        },
-                      ),
-                    );
+  key: ValueKey('list-${filtered.length}'),
+  color: AppTheme.navy,
+  onRefresh: () =>
+      ref.read(leadNotifierProvider.notifier).refresh(),
+  child: ListView.separated(
+    padding: const EdgeInsets.fromLTRB(14, 12, 14, 96),
+    itemCount: filtered.length,
+    separatorBuilder: (_, _) => const SizedBox(height: 10),
+    itemBuilder: (context, index) {
+      final lead = filtered[index];
+
+      return LeadCard(
+        lead: lead,
+        isWon: _isWon(lead.stage?.name),
+        isLost: _isLost(lead.stage?.name),
+        hasFollowUp: _isFollowUp(lead.stage?.name),
+        onTap: () => context.push('/leads/${lead.id}'),
+        onWon: () => markStage(lead, won: true),
+        onLost: () => markStage(lead, won: false),
+      );
+    },
+  ),
+);
                   },
                 ),
               ),
@@ -580,7 +556,7 @@ class _PipelineTabs extends ConsumerWidget {
     required this.filter,
     required this.leads,
     required this.currentUserId,
-    required this.isHighPriority,
+    required this.isFollowUp,
     required this.isWon,
     required this.isLost,
   });
@@ -588,7 +564,7 @@ class _PipelineTabs extends ConsumerWidget {
   final LeadFilterState filter;
   final List<LeadEntity> leads;
   final int? currentUserId;
-  final bool Function(LeadEntity) isHighPriority;
+  final bool Function(String?) isFollowUp;
   final bool Function(String?) isWon;
   final bool Function(String?) isLost;
 
@@ -603,7 +579,7 @@ class _PipelineTabs extends ConsumerWidget {
               .where((l) => l.assignedUser?.id == currentUserId)
               .length;
         case LeadPipelineTab.followup:
-          return leads.where(isHighPriority).length;
+          return leads.where((l) => isFollowUp(l.stage?.name)).length;
         case LeadPipelineTab.won:
           return leads.where((l) => isWon(l.stage?.name)).length;
         case LeadPipelineTab.lost:
