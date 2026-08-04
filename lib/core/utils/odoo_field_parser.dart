@@ -52,6 +52,22 @@ class OdooFieldParser {
   static DateTime? asDateTime(dynamic value) {
     final text = asString(value);
     if (text == null) return null;
-    return DateTime.tryParse(text.replaceFirst(' ', 'T'));
+    final normalized = text.contains('T')
+        ? text
+        : text.replaceFirst(' ', 'T');
+    final parsed = DateTime.tryParse(normalized);
+    if (parsed == null) return null;
+    // Odoo stores naive datetimes in UTC; treat missing offset as UTC.
+    if (parsed.isUtc) return parsed;
+    return DateTime.utc(
+      parsed.year,
+      parsed.month,
+      parsed.day,
+      parsed.hour,
+      parsed.minute,
+      parsed.second,
+      parsed.millisecond,
+      parsed.microsecond,
+    );
   }
 }

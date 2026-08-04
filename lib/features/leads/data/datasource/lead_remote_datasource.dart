@@ -53,15 +53,20 @@ class LeadRemoteDatasource {
     DateTime? endDate,
     int? assignedUserId,
     int? stageId,
+    bool priorityOnly = false,
+    bool openOnly = false,
+    List<int> excludeStageIds = const [],
   }) async {
     final extra = <List<dynamic>>[];
 
     if (assignedUserId != null) {
       extra.add(['user_id', '=', assignedUserId]);
     }
+
     if (stageId != null) {
       extra.add(['stage_id', '=', stageId]);
     }
+
     if (startDate != null) {
       extra.add(['create_date', '>=', DateFormatters.toApiDate(startDate)]);
     }
@@ -77,7 +82,24 @@ class LeadRemoteDatasource {
       extra.add(['create_date', '<=', DateFormatters.toApiDate(endOfDay)]);
     }
 
+    // // High priority temporarily disabled.
+    // if (priorityOnly) {
+    //   // DigiLawyer Odoo crm.lead.priority selection: "0" Normal, "1" High
+    //   extra.add(['priority', '=', '1']);
+    // }
+
+    if (openOnly) {
+      if (excludeStageIds.isNotEmpty) {
+        extra.add(['stage_id', 'not in', excludeStageIds]);
+      } else {
+        extra.add(['stage_id.is_won', '=', false]);
+        extra.add(['active', '=', true]);
+      }
+    }
+
     final domain = AppEnvironment.mergeDomain(extra);
+    // ignore: avoid_print
+    print('[LeadRemoteDatasource] crm.lead search_read domain: $domain');
 
     final request = JsonRpcRequest.callKw(
       model: 'crm.lead',
@@ -86,6 +108,7 @@ class LeadRemoteDatasource {
       kwargs: {
         'fields': _listFields,
         'order': 'create_date desc',
+        'limit': 5000,
       },
     );
 

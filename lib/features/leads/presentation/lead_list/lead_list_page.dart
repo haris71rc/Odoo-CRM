@@ -10,6 +10,7 @@ import 'package:odoocrm/core/widgets/loading_view.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
+import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/lead_card.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/lead_filter_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/lead_search_sheet.dart';
@@ -20,95 +21,6 @@ class LeadListPage extends HookConsumerWidget {
   const LeadListPage({super.key});
 
   static const _targetGoal = 100;
-
-  bool _isWon(String? name) {
-    final n = name?.toLowerCase() ?? '';
-    return n.contains('won');
-  }
-
-  bool _isLost(String? name) {
-    final n = name?.toLowerCase() ?? '';
-    return n == 'lost' || n.contains('closed lost') || n.endsWith(' lost');
-  }
-
-  bool _isFollowUp(String? name) {
-    final n = name?.toLowerCase() ?? '';
-    return n.contains('follow');
-  }
-
-  bool _isHighPriority(LeadEntity lead) {
-    final p = lead.priority ?? '';
-    return p == '2' || p == '3' || p.toLowerCase().contains('high');
-  }
-
-  bool _isCreatedToday(LeadEntity lead) {
-    final d = lead.createdDate?.toLocal();
-    if (d == null) return false;
-    final now = DateTime.now();
-    return d.year == now.year && d.month == now.month && d.day == now.day;
-  }
-
-  List<LeadEntity> _applyLocalFilters({
-    required List<LeadEntity> leads,
-    required LeadFilterState filter,
-    required int? currentUserId,
-  }) {
-    var filtered = leads;
-
-    switch (filter.pipelineTab) {
-      case LeadPipelineTab.mine:
-        if (currentUserId != null) {
-          filtered = filtered
-              .where((l) => l.assignedUser?.id == currentUserId)
-              .toList();
-        }
-      case LeadPipelineTab.followup:
-        filtered =
-            filtered.where((l) => _isFollowUp(l.stage?.name)).toList();
-      case LeadPipelineTab.won:
-        filtered = filtered.where((l) => _isWon(l.stage?.name)).toList();
-      case LeadPipelineTab.lost:
-        filtered = filtered.where((l) => _isLost(l.stage?.name)).toList();
-      case LeadPipelineTab.all:
-        break;
-    }
-
-    if (filter.todayMine && currentUserId != null) {
-      filtered = filtered
-          .where(
-            (l) =>
-                l.assignedUser?.id == currentUserId && _isCreatedToday(l),
-          )
-          .toList();
-    }
-    if (filter.untouched) {
-      filtered = filtered.where((l) => l.assignedUser == null).toList();
-    }
-    if (filter.priorityOnly) {
-      filtered = filtered.where(_isHighPriority).toList();
-    }
-    if (filter.openOnly) {
-      filtered = filtered
-          .where(
-            (l) => !_isWon(l.stage?.name) && !_isLost(l.stage?.name),
-          )
-          .toList();
-    }
-
-    final query = filter.searchQuery.trim().toLowerCase().replaceAll(' ', '');
-    if (query.isNotEmpty) {
-      filtered = filtered.where((lead) {
-        final hay = [
-          lead.name,
-          lead.partnerName,
-          lead.phone,
-        ].whereType<String>().join(' ').toLowerCase().replaceAll(' ', '');
-        return hay.contains(query);
-      }).toList();
-    }
-
-    return filtered;
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -121,11 +33,11 @@ class LeadListPage extends HookConsumerWidget {
       final stages = stagesAsync.valueOrNull ?? const <StageEntity>[];
       StageEntity? target;
       for (final s in stages) {
-        if (won && (s.isWon == true || _isWon(s.name))) {
+        if (won && (s.isWon == true || LeadListFilters.isWon(s.name))) {
           target = s;
           break;
         }
-        if (!won && _isLost(s.name)) {
+        if (!won && LeadListFilters.isLost(s.name)) {
           target = s;
           break;
         }
@@ -227,7 +139,7 @@ class LeadListPage extends HookConsumerWidget {
                             (l) =>
                                 currentUser != null &&
                                 l.assignedUser?.id == currentUser.id &&
-                                _isCreatedToday(l),
+                                LeadListFilters.isCreatedToday(l),
                           )
                           .length,
                       orElse: () => 0,
@@ -288,9 +200,6 @@ class LeadListPage extends HookConsumerWidget {
                     filter: filter,
                     leads: leadsAsync.valueOrNull ?? const [],
                     currentUserId: currentUser?.id,
-                    isFollowUp: _isFollowUp,
-                    isWon: _isWon,
-                    isLost: _isLost,
                   ),
                 ],
               ),
@@ -299,6 +208,8 @@ class LeadListPage extends HookConsumerWidget {
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 280),
                 child: leadsAsync.when(
+                  skipLoadingOnReload: true,
+                  skipLoadingOnRefresh: true,
                   loading: () => const LoadingView(
                     key: ValueKey('loading'),
                     message: 'Loading leads...',
@@ -311,43 +222,50 @@ class LeadListPage extends HookConsumerWidget {
                         ref.read(leadNotifierProvider.notifier).refresh(),
                   ),
                   data: (leads) {
-                    final filtered = _applyLocalFilters(
+                    final filtered = LeadListFilters.apply(
                       leads: leads,
                       filter: filter,
                       currentUserId: currentUser?.id,
                     );
                     if (filtered.isEmpty) {
-                      return const EmptyView(
-                        key: ValueKey('empty'),
+                      return EmptyView(
+                        key: ValueKey(
+                          'empty-${filter.pipelineTab.name}-'
+                          '${filter.localFilterCount}-'
+                          '${filter.searchQuery}',
+                        ),
                         message: 'No leads match this filter',
                         icon: Icons.filter_alt_outlined,
                       );
                     }
 
                     return RefreshIndicator(
-  key: ValueKey('list-${filtered.length}'),
-  color: AppTheme.navy,
-  onRefresh: () =>
-      ref.read(leadNotifierProvider.notifier).refresh(),
-  child: ListView.separated(
-    padding: const EdgeInsets.fromLTRB(14, 12, 14, 96),
-    itemCount: filtered.length,
-    separatorBuilder: (_, _) => const SizedBox(height: 10),
-    itemBuilder: (context, index) {
-      final lead = filtered[index];
-
-      return LeadCard(
-        lead: lead,
-        isWon: _isWon(lead.stage?.name),
-        isLost: _isLost(lead.stage?.name),
-        hasFollowUp: _isFollowUp(lead.stage?.name),
-        onTap: () => context.push('/leads/${lead.id}'),
-        onWon: () => markStage(lead, won: true),
-        onLost: () => markStage(lead, won: false),
-      );
-    },
-  ),
-);
+                      key: ValueKey(
+                        'list-${filter.pipelineTab.name}-${filtered.length}',
+                      ),
+                      color: AppTheme.navy,
+                      onRefresh: () =>
+                          ref.read(leadNotifierProvider.notifier).refresh(),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 96),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          final lead = filtered[index];
+                          return LeadCard(
+                            lead: lead,
+                            isWon: LeadListFilters.isWon(lead.stage?.name),
+                            isLost: LeadListFilters.isLost(lead.stage?.name),
+                            hasFollowUp: LeadListFilters.isFollowUp(
+                              lead.stage?.name,
+                            ),
+                            onTap: () => context.push('/leads/${lead.id}'),
+                            onWon: () => markStage(lead, won: true),
+                            onLost: () => markStage(lead, won: false),
+                          );
+                        },
+                      ),
+                    );
                   },
                 ),
               ),
@@ -437,10 +355,11 @@ class _FilterChipsRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(leadFilterNotifierProvider.notifier);
     final chips = [
       ('todayMine', 'Assigned today', filter.todayMine),
       ('untouched', 'Untouched', filter.untouched),
-      ('priority', 'High priority', filter.priorityOnly),
+      // ('priority', 'High priority', filter.priorityOnly),
       ('open', 'Open', filter.openOnly),
     ];
 
@@ -484,19 +403,57 @@ class _FilterChipsRow extends ConsumerWidget {
           for (final chip in chips) ...[
             _ChipButton(
               active: chip.$3,
-              onTap: () => ref
-                  .read(leadFilterNotifierProvider.notifier)
-                  .toggleLocalFilter(chip.$1),
+              onTap: () => notifier.toggleLocalFilter(chip.$1),
               child: Text(chip.$2),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (filter.dateFilter != null) ...[
+            _ChipButton(
+              active: true,
+              onTap: notifier.clearDateFilter,
+              child: Row(
+                children: [
+                  Text(filter.dateFilterLabel ?? 'Date'),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.close, size: 14),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (filter.assignedUserName != null) ...[
+            _ChipButton(
+              active: true,
+              onTap: notifier.clearAssignedUser,
+              child: Row(
+                children: [
+                  Text(filter.assignedUserName!),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.close, size: 14),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (filter.stageName != null) ...[
+            _ChipButton(
+              active: true,
+              onTap: notifier.clearStage,
+              child: Row(
+                children: [
+                  Text(filter.stageName!),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.close, size: 14),
+                ],
+              ),
             ),
             const SizedBox(width: 8),
           ],
           if (filter.localFilterCount > 0)
             _ChipButton(
               active: false,
-              onTap: () => ref
-                  .read(leadFilterNotifierProvider.notifier)
-                  .clearLocalFilters(),
+              onTap: notifier.clearLocalFilters,
               child: const Text('Clear'),
             ),
         ],
@@ -556,35 +513,21 @@ class _PipelineTabs extends ConsumerWidget {
     required this.filter,
     required this.leads,
     required this.currentUserId,
-    required this.isFollowUp,
-    required this.isWon,
-    required this.isLost,
   });
 
   final LeadFilterState filter;
   final List<LeadEntity> leads;
   final int? currentUserId;
-  final bool Function(String?) isFollowUp;
-  final bool Function(String?) isWon;
-  final bool Function(String?) isLost;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     int countFor(LeadPipelineTab tab) {
-      switch (tab) {
-        case LeadPipelineTab.all:
-          return leads.length;
-        case LeadPipelineTab.mine:
-          return leads
-              .where((l) => l.assignedUser?.id == currentUserId)
-              .length;
-        case LeadPipelineTab.followup:
-          return leads.where((l) => isFollowUp(l.stage?.name)).length;
-        case LeadPipelineTab.won:
-          return leads.where((l) => isWon(l.stage?.name)).length;
-        case LeadPipelineTab.lost:
-          return leads.where((l) => isLost(l.stage?.name)).length;
-      }
+      return LeadListFilters.apply(
+        leads: leads,
+        filter: filter,
+        currentUserId: currentUserId,
+        pipelineOverride: tab,
+      ).length;
     }
 
     const tabs = [

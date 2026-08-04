@@ -24,12 +24,12 @@ final leadRepositoryProvider = Provider<LeadRepository>.internal(
 // ignore: unused_element
 typedef LeadRepositoryRef = ProviderRef<LeadRepository>;
 String _$leadFilterNotifierHash() =>
-    r'7d86b56d4a5d8aae52bc001671b2ebd24d1791c3';
+    r'6f2dafc5b614e08c473db4cf2882913038384922';
 
 /// See also [LeadFilterNotifier].
 @ProviderFor(LeadFilterNotifier)
 final leadFilterNotifierProvider =
-    AutoDisposeNotifierProvider<LeadFilterNotifier, LeadFilterState>.internal(
+    NotifierProvider<LeadFilterNotifier, LeadFilterState>.internal(
       LeadFilterNotifier.new,
       name: r'leadFilterNotifierProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -39,13 +39,13 @@ final leadFilterNotifierProvider =
       allTransitiveDependencies: null,
     );
 
-typedef _$LeadFilterNotifier = AutoDisposeNotifier<LeadFilterState>;
-String _$leadNotifierHash() => r'e7108def3e61149d12a9b19bbf3bddd83e23a9aa';
+typedef _$LeadFilterNotifier = Notifier<LeadFilterState>;
+String _$leadNotifierHash() => r'91b8bcba3900977f997868630101a1f89d0d6794';
 
 /// See also [LeadNotifier].
 @ProviderFor(LeadNotifier)
 final leadNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<LeadNotifier, List<LeadEntity>>.internal(
+    AsyncNotifierProvider<LeadNotifier, List<LeadEntity>>.internal(
       LeadNotifier.new,
       name: r'leadNotifierProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -55,6 +55,6 @@ final leadNotifierProvider =
       allTransitiveDependencies: null,
     );
 
-typedef _$LeadNotifier = AutoDisposeAsyncNotifier<List<LeadEntity>>;
+typedef _$LeadNotifier = AsyncNotifier<List<LeadEntity>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

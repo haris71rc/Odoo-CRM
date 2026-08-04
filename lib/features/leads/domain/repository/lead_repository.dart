@@ -8,6 +8,9 @@ abstract class LeadRepository {
     DateTime? endDate,
     int? assignedUserId,
     int? stageId,
+    bool priorityOnly = false,
+    bool openOnly = false,
+    List<int> excludeStageIds = const [],
   });
 
   Future<Result<LeadDetailEntity>> getLeadDetail(int leadId);

@@ -26,6 +26,9 @@ class LeadRepositoryImpl implements LeadRepository {
     DateTime? endDate,
     int? assignedUserId,
     int? stageId,
+    bool priorityOnly = false,
+    bool openOnly = false,
+    List<int> excludeStageIds = const [],
   }) async {
     try {
       final dtos = await _datasource.searchRead(
@@ -33,6 +36,9 @@ class LeadRepositoryImpl implements LeadRepository {
         endDate: endDate,
         assignedUserId: assignedUserId,
         stageId: stageId,
+        priorityOnly: priorityOnly,
+        openOnly: openOnly,
+        excludeStageIds: excludeStageIds,
       );
       return Success(_leadMapper.toEntityList(dtos));
     } on Failure catch (failure) {

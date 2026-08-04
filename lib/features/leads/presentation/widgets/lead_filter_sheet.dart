@@ -38,7 +38,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
   late String? _stageName;
   late bool _todayMine;
   late bool _untouched;
-  late bool _priorityOnly;
+  // late bool _priorityOnly; // temporarily disabled
   late bool _openOnly;
 
   final _dateFormat = DateFormat('dd/MM');
@@ -56,7 +56,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
     _stageName = current.stageName;
     _todayMine = current.todayMine;
     _untouched = current.untouched;
-    _priorityOnly = current.priorityOnly;
+    // _priorityOnly = current.priorityOnly;
     _openOnly = current.openOnly;
   }
 
@@ -75,6 +75,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
       _customStart = range.start;
       _customEnd = range.end;
       _dateFilter = LeadDateFilter.custom;
+      _todayMine = false;
     });
   }
 
@@ -111,20 +112,43 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
       return;
     }
 
+    var todayMine = _todayMine;
+    var userId = _userId;
+    var userName = _userName;
+    var stageId = _stageId;
+    var stageName = _stageName;
+    var dateFilter = _dateFilter;
+    var customStart = _customStart;
+    var customEnd = _customEnd;
+
+    // Assigned-to-me-today owns assignee + create_date = today.
+    if (todayMine) {
+      userId = null;
+      userName = null;
+      dateFilter = null;
+      customStart = null;
+      customEnd = null;
+    }
+
+    // Untouched resolves to New Prospect stage_id — drop explicit stage picker.
+    if (_untouched) {
+      stageId = null;
+      stageName = null;
+    }
+
     ref.read(leadFilterNotifierProvider.notifier).applyFilters(
-          dateFilter: _dateFilter,
-          customStartDate: _dateFilter == LeadDateFilter.custom
-              ? _customStart
-              : null,
+          dateFilter: dateFilter,
+          customStartDate:
+              dateFilter == LeadDateFilter.custom ? customStart : null,
           customEndDate:
-              _dateFilter == LeadDateFilter.custom ? _customEnd : null,
-          assignedUserId: _userId,
-          assignedUserName: _userName,
-          stageId: _stageId,
-          stageName: _stageName,
-          todayMine: _todayMine,
+              dateFilter == LeadDateFilter.custom ? customEnd : null,
+          assignedUserId: userId,
+          assignedUserName: userName,
+          stageId: stageId,
+          stageName: stageName,
+          todayMine: todayMine,
           untouched: _untouched,
-          priorityOnly: _priorityOnly,
+          priorityOnly: false, // disabled: was _priorityOnly
           openOnly: _openOnly,
         );
     Navigator.of(context).pop();
@@ -137,8 +161,6 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final leadsCount =
-        ref.watch(leadNotifierProvider).valueOrNull?.length ?? 0;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.82;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
@@ -146,24 +168,39 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
       (
         'todayMine',
         'Assigned to me today',
-        'Auto-assigned leads created today',
+        'Created today and assigned to you',
         _todayMine,
-        () => setState(() => _todayMine = !_todayMine),
+        () => setState(() {
+          _todayMine = !_todayMine;
+          if (_todayMine) {
+            _userId = null;
+            _userName = null;
+            _dateFilter = null;
+            _customStart = null;
+            _customEnd = null;
+          }
+        }),
       ),
       (
         'untouched',
         'Untouched leads',
-        'Salesperson not set',
+        'New Prospect stage',
         _untouched,
-        () => setState(() => _untouched = !_untouched),
+        () => setState(() {
+          _untouched = !_untouched;
+          if (_untouched) {
+            _stageId = null;
+            _stageName = null;
+          }
+        }),
       ),
-      (
-        'priority',
-        'High priority',
-        'Starred opportunities',
-        _priorityOnly,
-        () => setState(() => _priorityOnly = !_priorityOnly),
-      ),
+      // (
+      //   'priority',
+      //   'High priority',
+      //   'Starred opportunities',
+      //   _priorityOnly,
+      //   () => setState(() => _priorityOnly = !_priorityOnly),
+      // ),
       (
         'open',
         'Open opportunities',
@@ -188,25 +225,28 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 10),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 10),
               child: Row(
                 children: [
-                  Text(
-                    'Filters',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.textPrimary,
+                  const Expanded(
+                    child: Text(
+                      'Filters',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textPrimary,
+                      ),
                     ),
                   ),
-                  Spacer(),
-                  Text(
-                    'Odoo domain filters',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textMuted,
-                      fontWeight: FontWeight.w600,
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    tooltip: 'Close',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 22,
+                      color: AppTheme.textSecondary,
                     ),
                   ),
                 ],
@@ -268,7 +308,10 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
                       active: _dateFilter == opt,
                       onTap: () async {
                         if (opt == LeadDateFilter.custom) {
-                          setState(() => _dateFilter = opt);
+                          setState(() {
+                            _dateFilter = opt;
+                            _todayMine = false;
+                          });
                           await _pickCustomRange();
                           return;
                         }
@@ -276,6 +319,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
                           _dateFilter = opt;
                           _customStart = null;
                           _customEnd = null;
+                          _todayMine = false;
                         });
                       },
                       title: opt.label,
@@ -294,37 +338,84 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
                     onUserChanged: (id, name) => setState(() {
                       _userId = id;
                       _userName = name;
+                      if (id != null) _todayMine = false;
                     }),
                     onStageChanged: (id, name) => setState(() {
                       _stageId = id;
                       _stageName = name;
+                      if (id != null) _untouched = false;
                     }),
                   ),
                 ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: AppTheme.border)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: _reset,
-                      child: const Text('Reset'),
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                decoration: const BoxDecoration(
+                  color: AppTheme.surface,
+                  border: Border(top: BorderSide(color: AppTheme.border)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: OutlinedButton(
+                          onPressed: _reset,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.textSecondary,
+                            side: const BorderSide(
+                              color: AppTheme.borderStrong,
+                              width: 1.5,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Reset',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 14,
-                    child: FilledButton(
-                      onPressed: _apply,
-                      child: Text('Show $leadsCount leads'),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: SizedBox(
+                        height: 52,
+                        child: FilledButton(
+                          onPressed: _apply,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppTheme.navy,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Apply filters',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -371,8 +462,11 @@ class _AssigneeStageSection extends ConsumerWidget {
             loading: () => const LinearProgressIndicator(minHeight: 2),
             error: (_, _) => const Text('Unable to load users'),
             data: (users) {
+              final selected =
+                  users.any((u) => u.id == userId) ? userId : null;
               return DropdownButtonFormField<int?>(
-                initialValue: users.any((u) => u.id == userId) ? userId : null,
+                key: ValueKey('filter-user-$selected'),
+                initialValue: selected,
                 isExpanded: true,
                 items: [
                   const DropdownMenuItem(value: null, child: Text('All Users')),
@@ -404,9 +498,11 @@ class _AssigneeStageSection extends ConsumerWidget {
             loading: () => const LinearProgressIndicator(minHeight: 2),
             error: (_, _) => const Text('Unable to load stages'),
             data: (stages) {
+              final selected =
+                  stages.any((s) => s.id == stageId) ? stageId : null;
               return DropdownButtonFormField<int?>(
-                initialValue:
-                    stages.any((s) => s.id == stageId) ? stageId : null,
+                key: ValueKey('filter-stage-$selected'),
+                initialValue: selected,
                 isExpanded: true,
                 items: [
                   const DropdownMenuItem(value: null, child: Text('All Stages')),

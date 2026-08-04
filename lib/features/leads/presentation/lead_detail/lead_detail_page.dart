@@ -7,13 +7,14 @@ import 'package:odoocrm/core/error/failures.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/core/theme/stage_colors.dart';
 import 'package:odoocrm/core/utils/date_formatters.dart';
-import 'package:odoocrm/core/utils/html_text_utils.dart';
 import 'package:odoocrm/core/utils/initials.dart';
 import 'package:odoocrm/core/widgets/empty_view.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
+import 'package:odoocrm/features/chatter/presentation/widgets/chatter_message_body.dart';
+import 'package:odoocrm/features/chatter/presentation/widgets/chatter_tracking_values.dart';
 import 'package:odoocrm/features/chatter/presentation/widgets/log_note_sheet.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/internal_note_notifier.dart';
@@ -1158,7 +1159,13 @@ class _RemarksTab extends ConsumerWidget {
           ),
           data: (messages) {
             final notes = messages
-                .where((m) => m.isNote || m.hasBody)
+                .where(
+                  (m) =>
+                      m.isNote ||
+                      m.hasBody ||
+                      m.hasTracking ||
+                      (m.subtypeDescription?.trim().isNotEmpty ?? false),
+                )
                 .toList();
             if (notes.isEmpty) {
               return const EmptyView(
@@ -1201,15 +1208,26 @@ class _RemarksTab extends ConsumerWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          HtmlTextUtils.toPlainText(note.body),
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            color: Color(0xFF344054),
-                            height: 1.6,
+                        if (note.subtypeDescription?.trim().isNotEmpty ??
+                            false) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            note.subtypeDescription!.trim(),
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimary,
+                            ),
                           ),
-                        ),
+                        ],
+                        if (note.hasTracking) ...[
+                          const SizedBox(height: 6),
+                          ChatterTrackingValues(values: note.trackingValues),
+                        ],
+                        if (note.hasBody) ...[
+                          const SizedBox(height: 6),
+                          ChatterMessageBody(html: note.body),
+                        ],
                       ],
                     ),
                   ),

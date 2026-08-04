@@ -113,15 +113,24 @@ class ChatterStoreParser {
   List<TrackingValueEntity> _mapTrackingValues(dynamic raw) {
     if (raw is! List) return const [];
 
-    return raw.whereType<Map>().map((item) {
-      final map = Map<String, dynamic>.from(item);
-      return TrackingValueEntity(
-        changedField: OdooFieldParser.asString(map['changedField']) ?? '',
-        oldValue: _trackingDisplayValue(map['oldValue']),
-        newValue: _trackingDisplayValue(map['newValue']),
-        fieldType: OdooFieldParser.asString(map['fieldType']),
-      );
-    }).where((item) => item.changedField.isNotEmpty).toList();
+    return raw.map((item) {
+      if (item is Map) {
+        final map = Map<String, dynamic>.from(item);
+        return TrackingValueEntity(
+          changedField: OdooFieldParser.asString(map['changedField']) ??
+              OdooFieldParser.asString(map['fieldName']) ??
+              '',
+          oldValue: _trackingDisplayValue(map['oldValue']),
+          newValue: _trackingDisplayValue(map['newValue']),
+          fieldType: OdooFieldParser.asString(map['fieldType']),
+        );
+      }
+      return null;
+    }).whereType<TrackingValueEntity>().where((item) {
+      return item.changedField.isNotEmpty ||
+          (item.oldValue?.isNotEmpty ?? false) ||
+          (item.newValue?.isNotEmpty ?? false);
+    }).toList();
   }
 
   String? _trackingDisplayValue(dynamic raw) {

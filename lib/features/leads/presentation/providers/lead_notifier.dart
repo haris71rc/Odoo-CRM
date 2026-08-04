@@ -1,11 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
+import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/leads/data/datasource/lead_remote_datasource.dart';
 import 'package:odoocrm/features/leads/data/repository/lead_repository_impl.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_date_filter.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
 import 'package:odoocrm/features/leads/domain/repository/lead_repository.dart';
 import 'package:odoocrm/features/leads/domain/utils/lead_date_range.dart';
+import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
+import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'lead_notifier.g.dart';
@@ -19,7 +22,20 @@ LeadRepository leadRepository(Ref ref) {
   );
 }
 
-/// Applied lead list filters (server-side date / user / stage + local search).
+/// Server-side params that should trigger a leads refetch.
+typedef LeadServerFilterKey = ({
+  LeadDateFilter? dateFilter,
+  DateTime? customStartDate,
+  DateTime? customEndDate,
+  int? assignedUserId,
+  int? stageId,
+  bool todayMine,
+  bool untouched,
+  bool priorityOnly,
+  bool openOnly,
+});
+
+/// Applied lead list filters (Odoo domain + local pipeline/search).
 class LeadFilterState {
   const LeadFilterState({
     this.searchQuery = '',
@@ -57,7 +73,7 @@ class LeadFilterState {
     var count = 0;
     if (todayMine) count++;
     if (untouched) count++;
-    if (priorityOnly) count++;
+    // if (priorityOnly) count++;
     if (openOnly) count++;
     if (dateFilter != null) count++;
     if (assignedUserId != null) count++;
@@ -66,14 +82,37 @@ class LeadFilterState {
   }
 
   bool get hasActiveServerFilters {
-    return dateFilter != null || assignedUserId != null || stageId != null;
+    return dateFilter != null ||
+        assignedUserId != null ||
+        stageId != null ||
+        todayMine ||
+        untouched ||
+        // priorityOnly ||
+        openOnly;
   }
+
+  LeadServerFilterKey get serverFilterKey => (
+        dateFilter: dateFilter,
+        customStartDate: customStartDate,
+        customEndDate: customEndDate,
+        assignedUserId: assignedUserId,
+        stageId: stageId,
+        todayMine: todayMine,
+        untouched: untouched,
+        priorityOnly: false, // disabled
+        openOnly: openOnly,
+      );
 
   LeadDateRange? get resolvedDateRange => LeadDateRange.resolve(
         filter: dateFilter,
         customStart: customStartDate,
         customEnd: customEndDate,
       );
+
+  String? get dateFilterLabel {
+    if (dateFilter == null) return null;
+    return dateFilter!.label;
+  }
 
   LeadFilterState copyWith({
     String? searchQuery,
@@ -117,7 +156,7 @@ class LeadFilterState {
   }
 }
 
-@riverpod
+@Riverpod(keepAlive: true)
 class LeadFilterNotifier extends _$LeadFilterNotifier {
   @override
   LeadFilterState build() => const LeadFilterState();
@@ -127,6 +166,7 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
   }
 
   void setPipelineTab(LeadPipelineTab tab) {
+    // Keep date / assignee / stage filters when switching segments.
     state = state.copyWith(pipelineTab: tab);
   }
 
@@ -139,11 +179,22 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
   void toggleLocalFilter(String key) {
     switch (key) {
       case 'todayMine':
-        state = state.copyWith(todayMine: !state.todayMine);
+        final next = !state.todayMine;
+        state = state.copyWith(
+          todayMine: next,
+          // Assigned-to-me-today uses logged-in user + create_date today.
+          clearAssignedUser: next,
+          clearDateFilter: next,
+          clearCustomDates: next,
+        );
       case 'untouched':
-        state = state.copyWith(untouched: !state.untouched);
-      case 'priority':
-        state = state.copyWith(priorityOnly: !state.priorityOnly);
+        final next = !state.untouched;
+        state = state.copyWith(
+          untouched: next,
+          clearStage: next,
+        );
+      // case 'priority':
+      //   state = state.copyWith(priorityOnly: !state.priorityOnly);
       case 'open':
         state = state.copyWith(openOnly: !state.openOnly);
     }
@@ -162,6 +213,18 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
     );
   }
 
+  void clearDateFilter() {
+    state = state.copyWith(clearDateFilter: true, clearCustomDates: true);
+  }
+
+  void clearAssignedUser() {
+    state = state.copyWith(clearAssignedUser: true);
+  }
+
+  void clearStage() {
+    state = state.copyWith(clearStage: true);
+  }
+
   void applyFilters({
     LeadDateFilter? dateFilter,
     DateTime? customStartDate,
@@ -175,18 +238,52 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
     bool? priorityOnly,
     bool? openOnly,
   }) {
+    var nextTodayMine = todayMine ?? state.todayMine;
+    var nextUserId = assignedUserId;
+    var nextUserName = assignedUserName;
+
+    // Assigned-to-me-today owns the assignee + date; drop explicit assignee/date.
+    if (nextTodayMine) {
+      nextUserId = null;
+      nextUserName = null;
+    }
+
+    var nextTab = state.pipelineTab;
+    if (stageId != null &&
+        (nextTab == LeadPipelineTab.followup ||
+            nextTab == LeadPipelineTab.won ||
+            nextTab == LeadPipelineTab.lost)) {
+      nextTab = LeadPipelineTab.all;
+    }
+
+    // Untouched uses New Prospect stage; drop an explicit stage picker value
+    // so domains don't conflict on stage_id.
+    final nextUntouched = untouched ?? state.untouched;
+    final nextStageId = nextUntouched ? null : stageId;
+    final nextStageName = nextUntouched ? null : stageName;
+    if (nextUntouched &&
+        (nextTab == LeadPipelineTab.followup ||
+            nextTab == LeadPipelineTab.won ||
+            nextTab == LeadPipelineTab.lost)) {
+      nextTab = LeadPipelineTab.all;
+    }
+
     state = LeadFilterState(
       searchQuery: state.searchQuery,
-      pipelineTab: state.pipelineTab,
-      dateFilter: dateFilter,
-      customStartDate: customStartDate,
-      customEndDate: customEndDate,
-      assignedUserId: assignedUserId,
-      assignedUserName: assignedUserName,
-      stageId: stageId,
-      stageName: stageName,
-      todayMine: todayMine ?? state.todayMine,
-      untouched: untouched ?? state.untouched,
+      pipelineTab: nextTab,
+      dateFilter: nextTodayMine ? null : dateFilter,
+      customStartDate: nextTodayMine
+          ? null
+          : (dateFilter == LeadDateFilter.custom ? customStartDate : null),
+      customEndDate: nextTodayMine
+          ? null
+          : (dateFilter == LeadDateFilter.custom ? customEndDate : null),
+      assignedUserId: nextUserId,
+      assignedUserName: nextUserName,
+      stageId: nextStageId,
+      stageName: nextStageName,
+      todayMine: nextTodayMine,
+      untouched: nextUntouched,
       priorityOnly: priorityOnly ?? state.priorityOnly,
       openOnly: openOnly ?? state.openOnly,
     );
@@ -200,19 +297,75 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
   }
 }
 
-@riverpod
+@Riverpod(keepAlive: true)
 class LeadNotifier extends _$LeadNotifier {
   @override
   FutureOr<List<LeadEntity>> build() async {
-    final filter = ref.watch(leadFilterNotifierProvider);
+    final serverKey = ref.watch(
+      leadFilterNotifierProvider.select((f) => f.serverFilterKey),
+    );
+    final currentUserId = ref.watch(
+      authNotifierProvider.select((a) => a.valueOrNull?.id),
+    );
     final repository = ref.watch(leadRepositoryProvider);
-    final range = filter.resolvedDateRange;
+
+    if (serverKey.todayMine && currentUserId == null) {
+      return const [];
+    }
+
+    var range = LeadDateRange.resolve(
+      filter: serverKey.dateFilter,
+      customStart: serverKey.customStartDate,
+      customEnd: serverKey.customEndDate,
+    );
+
+    var assignedUserId = serverKey.assignedUserId;
+
+    // Assigned to me today → logged-in user + create_date = today.
+    if (serverKey.todayMine) {
+      assignedUserId = currentUserId;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      range = LeadDateRange(
+        start: today,
+        end: DateTime(today.year, today.month, today.day, 23, 59, 59),
+      );
+    }
+
+    List<int> excludeStageIds = const [];
+    int? stageId = serverKey.stageId;
+
+    if (serverKey.untouched || serverKey.openOnly) {
+      final stages = await ref.watch(stageNotifierProvider.future);
+
+      if (serverKey.untouched) {
+        // Untouched = still in New Prospect / New Prospects stage.
+        stageId = LeadListFilters.findNewProspectStageId(stages);
+        if (stageId == null) return const [];
+      }
+
+      if (serverKey.openOnly) {
+        excludeStageIds = stages
+            .where(
+              (s) =>
+                  s.isWon == true ||
+                  LeadListFilters.isWon(s.name) ||
+                  LeadListFilters.isLost(s.name),
+            )
+            .map((s) => s.id)
+            .toList();
+      }
+    }
 
     final result = await repository.getLeads(
       startDate: range?.start,
       endDate: range?.end,
-      assignedUserId: filter.assignedUserId,
-      stageId: filter.stageId,
+      assignedUserId: assignedUserId,
+      stageId: stageId,
+      // priorityOnly: serverKey.priorityOnly, // disabled
+      priorityOnly: false,
+      openOnly: serverKey.openOnly,
+      excludeStageIds: excludeStageIds,
     );
 
     return result.when(
