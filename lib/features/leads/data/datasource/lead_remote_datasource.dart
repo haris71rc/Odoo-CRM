@@ -51,9 +51,17 @@ class LeadRemoteDatasource {
   Future<List<LeadDto>> searchRead({
     DateTime? startDate,
     DateTime? endDate,
+    int? assignedUserId,
+    int? stageId,
   }) async {
     final extra = <List<dynamic>>[];
 
+    if (assignedUserId != null) {
+      extra.add(['user_id', '=', assignedUserId]);
+    }
+    if (stageId != null) {
+      extra.add(['stage_id', '=', stageId]);
+    }
     if (startDate != null) {
       extra.add(['create_date', '>=', DateFormatters.toApiDate(startDate)]);
     }

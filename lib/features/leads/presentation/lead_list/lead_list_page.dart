@@ -39,22 +39,7 @@ class LeadListPage extends HookConsumerWidget {
     }, [searchController]);
 
     Future<void> openFilter() async {
-      final result = await showModalBottomSheet<LeadDateFilterResult>(
-        context: context,
-        showDragHandle: true,
-        builder: (_) => LeadFilterSheet(
-          initialStart: filter.startDate,
-          initialEnd: filter.endDate,
-        ),
-      );
-
-      if (result == null) return;
-      final notifier = ref.read(leadFilterNotifierProvider.notifier);
-      if (result.reset) {
-        notifier.resetDates();
-      } else {
-        notifier.setDateRange(result.start, result.end);
-      }
+      await showLeadFilterSheet(context: context);
     }
 
     List<LeadEntity> applyLocalFilters(List<LeadEntity> leads) {
@@ -81,11 +66,10 @@ class LeadListPage extends HookConsumerWidget {
         title: const Text('CRM Leads'),
         actions: [
           IconButton(
-            tooltip: 'Filter by date',
+            tooltip: 'Filter leads',
             onPressed: openFilter,
             icon: Badge(
-              isLabelVisible:
-                  filter.startDate != null || filter.endDate != null,
+              isLabelVisible: filter.hasActiveServerFilters,
               child: const Icon(Icons.filter_list_rounded),
             ),
           ),

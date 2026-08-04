@@ -6,6 +6,8 @@ abstract class LeadRepository {
   Future<Result<List<LeadEntity>>> getLeads({
     DateTime? startDate,
     DateTime? endDate,
+    int? assignedUserId,
+    int? stageId,
   });
 
   Future<Result<LeadDetailEntity>> getLeadDetail(int leadId);

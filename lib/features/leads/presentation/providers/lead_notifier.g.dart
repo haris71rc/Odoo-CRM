@@ -24,12 +24,12 @@ final leadRepositoryProvider = Provider<LeadRepository>.internal(
 // ignore: unused_element
 typedef LeadRepositoryRef = ProviderRef<LeadRepository>;
 String _$leadFilterNotifierHash() =>
-    r'0b3257551d9d95679273ca29268db790e61ba064';
+    r'b33fef660953d8171299fefc1ddad8bd6ee07ca6';
 
 /// See also [LeadFilterNotifier].
 @ProviderFor(LeadFilterNotifier)
 final leadFilterNotifierProvider =
-    AutoDisposeNotifierProvider<LeadFilterNotifier, LeadListQuery>.internal(
+    AutoDisposeNotifierProvider<LeadFilterNotifier, LeadFilterState>.internal(
       LeadFilterNotifier.new,
       name: r'leadFilterNotifierProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -39,8 +39,8 @@ final leadFilterNotifierProvider =
       allTransitiveDependencies: null,
     );
 
-typedef _$LeadFilterNotifier = AutoDisposeNotifier<LeadListQuery>;
-String _$leadNotifierHash() => r'4c06a6319845fe7fafa94cc5ec93629f5a64ddf7';
+typedef _$LeadFilterNotifier = AutoDisposeNotifier<LeadFilterState>;
+String _$leadNotifierHash() => r'4f49caf97887e643a0a53e4a25a1aa30dedbc8b2';
 
 /// See also [LeadNotifier].
 @ProviderFor(LeadNotifier)

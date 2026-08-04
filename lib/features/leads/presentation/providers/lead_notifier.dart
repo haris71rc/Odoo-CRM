@@ -2,8 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
 import 'package:odoocrm/features/leads/data/datasource/lead_remote_datasource.dart';
 import 'package:odoocrm/features/leads/data/repository/lead_repository_impl.dart';
+import 'package:odoocrm/features/leads/domain/entities/lead_date_filter.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
 import 'package:odoocrm/features/leads/domain/repository/lead_repository.dart';
+import 'package:odoocrm/features/leads/domain/utils/lead_date_range.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'lead_notifier.g.dart';
@@ -15,31 +17,72 @@ LeadRepository leadRepository(Ref ref) {
   );
 }
 
-class LeadListQuery {
-  const LeadListQuery({
+/// Applied lead list filters (server-side date / user / stage + local search).
+class LeadFilterState {
+  const LeadFilterState({
     this.searchQuery = '',
     this.assignedToMeOnly = false,
-    this.startDate,
-    this.endDate,
+    this.dateFilter,
+    this.customStartDate,
+    this.customEndDate,
+    this.assignedUserId,
+    this.assignedUserName,
+    this.stageId,
+    this.stageName,
   });
 
   final String searchQuery;
   final bool assignedToMeOnly;
-  final DateTime? startDate;
-  final DateTime? endDate;
+  final LeadDateFilter? dateFilter;
+  final DateTime? customStartDate;
+  final DateTime? customEndDate;
+  final int? assignedUserId;
+  final String? assignedUserName;
+  final int? stageId;
+  final String? stageName;
 
-  LeadListQuery copyWith({
+  bool get hasActiveServerFilters {
+    return dateFilter != null ||
+        assignedUserId != null ||
+        stageId != null;
+  }
+
+  LeadDateRange? get resolvedDateRange => LeadDateRange.resolve(
+        filter: dateFilter,
+        customStart: customStartDate,
+        customEnd: customEndDate,
+      );
+
+  LeadFilterState copyWith({
     String? searchQuery,
     bool? assignedToMeOnly,
-    DateTime? startDate,
-    DateTime? endDate,
-    bool clearDates = false,
+    LeadDateFilter? dateFilter,
+    DateTime? customStartDate,
+    DateTime? customEndDate,
+    int? assignedUserId,
+    String? assignedUserName,
+    int? stageId,
+    String? stageName,
+    bool clearDateFilter = false,
+    bool clearCustomDates = false,
+    bool clearAssignedUser = false,
+    bool clearStage = false,
   }) {
-    return LeadListQuery(
+    return LeadFilterState(
       searchQuery: searchQuery ?? this.searchQuery,
       assignedToMeOnly: assignedToMeOnly ?? this.assignedToMeOnly,
-      startDate: clearDates ? null : (startDate ?? this.startDate),
-      endDate: clearDates ? null : (endDate ?? this.endDate),
+      dateFilter: clearDateFilter ? null : (dateFilter ?? this.dateFilter),
+      customStartDate:
+          clearCustomDates ? null : (customStartDate ?? this.customStartDate),
+      customEndDate:
+          clearCustomDates ? null : (customEndDate ?? this.customEndDate),
+      assignedUserId:
+          clearAssignedUser ? null : (assignedUserId ?? this.assignedUserId),
+      assignedUserName: clearAssignedUser
+          ? null
+          : (assignedUserName ?? this.assignedUserName),
+      stageId: clearStage ? null : (stageId ?? this.stageId),
+      stageName: clearStage ? null : (stageName ?? this.stageName),
     );
   }
 }
@@ -47,7 +90,7 @@ class LeadListQuery {
 @riverpod
 class LeadFilterNotifier extends _$LeadFilterNotifier {
   @override
-  LeadListQuery build() => const LeadListQuery();
+  LeadFilterState build() => const LeadFilterState();
 
   void setSearch(String value) {
     state = state.copyWith(searchQuery: value);
@@ -57,12 +100,33 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
     state = state.copyWith(assignedToMeOnly: value);
   }
 
-  void setDateRange(DateTime? start, DateTime? end) {
-    state = state.copyWith(startDate: start, endDate: end);
+  void applyFilters({
+    LeadDateFilter? dateFilter,
+    DateTime? customStartDate,
+    DateTime? customEndDate,
+    int? assignedUserId,
+    String? assignedUserName,
+    int? stageId,
+    String? stageName,
+  }) {
+    state = LeadFilterState(
+      searchQuery: state.searchQuery,
+      assignedToMeOnly: state.assignedToMeOnly,
+      dateFilter: dateFilter,
+      customStartDate: customStartDate,
+      customEndDate: customEndDate,
+      assignedUserId: assignedUserId,
+      assignedUserName: assignedUserName,
+      stageId: stageId,
+      stageName: stageName,
+    );
   }
 
-  void resetDates() {
-    state = state.copyWith(clearDates: true);
+  void resetFilters() {
+    state = LeadFilterState(
+      searchQuery: state.searchQuery,
+      assignedToMeOnly: state.assignedToMeOnly,
+    );
   }
 }
 
@@ -72,9 +136,13 @@ class LeadNotifier extends _$LeadNotifier {
   FutureOr<List<LeadEntity>> build() async {
     final filter = ref.watch(leadFilterNotifierProvider);
     final repository = ref.watch(leadRepositoryProvider);
+    final range = filter.resolvedDateRange;
+
     final result = await repository.getLeads(
-      startDate: filter.startDate,
-      endDate: filter.endDate,
+      startDate: range?.start,
+      endDate: range?.end,
+      assignedUserId: filter.assignedUserId,
+      stageId: filter.stageId,
     );
 
     return result.when(

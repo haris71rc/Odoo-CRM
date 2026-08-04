@@ -24,11 +24,15 @@ class LeadRepositoryImpl implements LeadRepository {
   Future<Result<List<LeadEntity>>> getLeads({
     DateTime? startDate,
     DateTime? endDate,
+    int? assignedUserId,
+    int? stageId,
   }) async {
     try {
       final dtos = await _datasource.searchRead(
         startDate: startDate,
         endDate: endDate,
+        assignedUserId: assignedUserId,
+        stageId: stageId,
       );
       return Success(_leadMapper.toEntityList(dtos));
     } on Failure catch (failure) {
