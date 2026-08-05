@@ -20,6 +20,9 @@ import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/internal_note_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
+import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_actions_sheet.dart';
+import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_fab.dart';
+import 'package:odoocrm/core/services/whatsapp_service.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -493,7 +496,7 @@ class LeadDetailPage extends HookConsumerWidget {
                             .refresh();
                       },
                       child: ListView(
-                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 120),
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 168),
                         children: [
                           if (tab.value == _DetailTab.info)
                             _DetailsTab(
@@ -641,6 +644,23 @@ class LeadDetailPage extends HookConsumerWidget {
                             ),
                           ),
                         ),
+                ),
+              ),
+              // WhatsApp FAB — 16dp from right, 24dp above the Call bar.
+              Positioned(
+                right: 16,
+                bottom: 16 +
+                    MediaQuery.paddingOf(context).bottom +
+                    54 +
+                    24,
+                child: WhatsAppFab(
+                  onPressed: () {
+                    showWhatsAppActionsSheet(
+                      context: context,
+                      phone: phone,
+                      service: ref.read(whatsAppServiceProvider),
+                    );
+                  },
                 ),
               ),
             ],

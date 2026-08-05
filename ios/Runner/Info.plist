@@ -13,6 +13,7 @@
 		<string>tel</string>
 		<string>https</string>
 		<string>http</string>
+		<string>whatsapp</string>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>

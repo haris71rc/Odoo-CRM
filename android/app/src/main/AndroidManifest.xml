@@ -1,5 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Required to resolve WhatsApp voip.call contact rows for direct voice calls. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
+    <!-- WhatsApp CallContactLandingActivity is protected by this on many builds. -->
+    <uses-permission android:name="android.permission.CALL_PHONE"/>
     <application
         android:label="Odoo CRM"
         android:name="${applicationName}"
@@ -49,6 +53,21 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="tel"/>
+        </intent>
+        <!-- WhatsApp package visibility (Android 11+) -->
+        <package android:name="com.whatsapp"/>
+        <package android:name="com.whatsapp.w4b"/>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https" android:host="wa.me"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https" android:host="api.whatsapp.com"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="whatsapp"/>
         </intent>
     </queries>
 </manifest>
