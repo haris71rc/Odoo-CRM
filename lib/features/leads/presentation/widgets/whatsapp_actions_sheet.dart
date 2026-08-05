@@ -78,25 +78,30 @@ class WhatsAppActionsSheet extends StatelessWidget {
               _WhatsAppActionTile(
                 label: 'WhatsApp Call',
                 enabled: _hasPhone,
-                onTap: () async {
+                onTap: () {
                   final messenger = ScaffoldMessenger.of(context);
                   Navigator.of(context).pop();
-                  final result = await service.startCall(phone ?? '');
-                  final message = service.messageFor(result);
-                  if (message == null) return;
-                  messenger.showSnackBar(SnackBar(content: Text(message)));
+                  // Fire after the sheet closes so we don't fight its animation.
+                  Future<void>.delayed(const Duration(milliseconds: 180), () async {
+                    final result = await service.startCall(phone ?? '');
+                    final message = service.messageFor(result);
+                    if (message == null) return;
+                    messenger.showSnackBar(SnackBar(content: Text(message)));
+                  });
                 },
               ),
             _WhatsAppActionTile(
               label: 'WhatsApp Message',
               enabled: _hasPhone,
-              onTap: () async {
+              onTap: () {
                 final messenger = ScaffoldMessenger.of(context);
                 Navigator.of(context).pop();
-                final result = await service.openChat(phone ?? '');
-                final message = service.messageFor(result);
-                if (message == null) return;
-                messenger.showSnackBar(SnackBar(content: Text(message)));
+                Future<void>.delayed(const Duration(milliseconds: 180), () async {
+                  final result = await service.openChat(phone ?? '');
+                  final message = service.messageFor(result);
+                  if (message == null) return;
+                  messenger.showSnackBar(SnackBar(content: Text(message)));
+                });
               },
             ),
           ],

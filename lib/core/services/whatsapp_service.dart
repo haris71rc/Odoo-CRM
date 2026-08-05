@@ -14,6 +14,12 @@ enum WhatsAppLaunchResult {
   /// Direct call was unavailable; opened the chat conversation instead.
   openedChatFallback,
 
+  /// Opened WhatsApp dialer — user should tap Call.
+  openedDialer,
+
+  /// Number does not appear to be registered on WhatsApp.
+  notOnWhatsApp,
+
   /// WhatsApp is not installed on the device.
   notInstalled,
 
@@ -24,6 +30,18 @@ enum WhatsAppLaunchResult {
   unsupported,
 
   /// Launch failed for an unexpected reason.
+  failed,
+}
+
+/// Best-effort WhatsApp registration status for a phone number.
+enum WhatsAppRegistration {
+  registered,
+  notRegistered,
+
+  /// Could not determine (no public API; probe was inconclusive).
+  unknown,
+  notInstalled,
+  invalidPhone,
   failed,
 }
 
@@ -57,8 +75,6 @@ class WhatsAppService {
     try {
       final canLaunch = await canLaunchUrl(uri);
       if (!canLaunch) {
-        // Android package visibility / iOS queries can make this false even
-        // when WhatsApp is present; still attempt an external launch.
         final launched = await launchUrl(
           uri,
           mode: LaunchMode.externalApplication,
@@ -82,10 +98,46 @@ class WhatsAppService {
     }
   }
 
-  /// Starts a WhatsApp voice call on Android.
+  /// Best-effort check whether [phone] is registered on WhatsApp (Android).
   ///
-  /// Falls back to opening the chat when a direct call intent is unavailable.
-  /// Not supported on iOS — returns [WhatsAppLaunchResult.unsupported].
+  /// Uses local WhatsApp-synced contacts when available, then a lightweight
+  /// web probe. There is no official consumer API, so [WhatsAppRegistration.unknown]
+  /// means we could not prove either way.
+  Future<WhatsAppRegistration> isOnWhatsApp(String phone) async {
+    final normalized = PhoneNumberUtils.normalizeOrNull(phone);
+    if (normalized == null) return WhatsAppRegistration.invalidPhone;
+
+    if (kIsWeb || !Platform.isAndroid) {
+      // iOS / web: no reliable local check; treat as unknown.
+      return WhatsAppRegistration.unknown;
+    }
+
+    try {
+      final raw = await _channel.invokeMethod<String>(
+        'isOnWhatsApp',
+        <String, dynamic>{'phone': normalized},
+      );
+      return switch (raw) {
+        'registered' => WhatsAppRegistration.registered,
+        'not_registered' => WhatsAppRegistration.notRegistered,
+        'not_installed' => WhatsAppRegistration.notInstalled,
+        'unknown' => WhatsAppRegistration.unknown,
+        _ => WhatsAppRegistration.failed,
+      };
+    } on PlatformException catch (e) {
+      if (e.code == 'not_installed') {
+        return WhatsAppRegistration.notInstalled;
+      }
+      return WhatsAppRegistration.failed;
+    } catch (_) {
+      return WhatsAppRegistration.failed;
+    }
+  }
+
+  /// Starts a WhatsApp voice call on Android (including unsaved numbers).
+  ///
+  /// Checks registration first when possible. Falls back to chat when a direct
+  /// call intent cannot be started. Not supported on iOS.
   Future<WhatsAppLaunchResult> startCall(String phone) async {
     final normalized = PhoneNumberUtils.normalizeOrNull(phone);
     if (normalized == null) return WhatsAppLaunchResult.invalidPhone;
@@ -103,8 +155,12 @@ class WhatsAppService {
       switch (raw) {
         case 'success':
           return WhatsAppLaunchResult.success;
+        case 'opened_dialer':
+          return WhatsAppLaunchResult.openedDialer;
         case 'fallback_chat':
           return WhatsAppLaunchResult.openedChatFallback;
+        case 'not_on_whatsapp':
+          return WhatsAppLaunchResult.notOnWhatsApp;
         case 'not_installed':
           return WhatsAppLaunchResult.notInstalled;
         default:
@@ -114,7 +170,6 @@ class WhatsAppService {
       if (e.code == 'not_installed') {
         return WhatsAppLaunchResult.notInstalled;
       }
-      // Native call failed — still try chat so the user can reach the lead.
       final fallback = await openChat(normalized, message: '');
       if (fallback == WhatsAppLaunchResult.success) {
         return WhatsAppLaunchResult.openedChatFallback;
@@ -130,11 +185,15 @@ class WhatsAppService {
     return switch (result) {
       WhatsAppLaunchResult.notInstalled => 'WhatsApp is not installed.',
       WhatsAppLaunchResult.invalidPhone => 'No phone number available',
+      WhatsAppLaunchResult.notOnWhatsApp =>
+        'This number is not on WhatsApp.',
       WhatsAppLaunchResult.unsupported =>
         'WhatsApp call is not available on this device.',
       WhatsAppLaunchResult.failed => 'Unable to open WhatsApp',
+      WhatsAppLaunchResult.openedDialer =>
+        'WhatsApp dialer opened — tap Call to start the voice call.',
       WhatsAppLaunchResult.openedChatFallback =>
-        'Opened chat. Save this number in Contacts to enable direct WhatsApp calls.',
+        'Opened chat. Tap the phone icon in WhatsApp to start the call.',
       WhatsAppLaunchResult.success => null,
     };
   }
