@@ -8,6 +8,9 @@ import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
 import 'package:odoocrm/features/leads/domain/repository/lead_repository.dart';
 import 'package:odoocrm/features/leads/domain/utils/lead_date_range.dart';
 import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
+import 'package:odoocrm/features/mobile_call/domain/entities/stage_call_validation_data.dart';
+import 'package:odoocrm/features/mobile_call/domain/validation/stage_call_validator.dart';
+import 'package:odoocrm/features/mobile_call/presentation/providers/mobile_call_providers.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -382,13 +385,33 @@ class LeadNotifier extends _$LeadNotifier {
   Future<String?> updateStage({
     required int leadId,
     required int stageId,
+    String? currentStageName,
+    String? targetStageName,
   }) async {
+    final currentUserId = ref.read(authNotifierProvider).valueOrNull?.id;
+    final mobileCallRepository = ref.read(mobileCallRepositoryProvider);
+    final validationResult =
+        await mobileCallRepository.fetchStageCallValidationData(leadId);
+    if (validationResult.isFailure) {
+      return validationResult.failureOrNull!.message;
+    }
+
+    final validationError = StageCallValidator.validate(
+      currentStageName: currentStageName,
+      targetStageName: targetStageName,
+      data: validationResult.valueOrNull ??
+          const StageCallValidationData(latestCall: null, mobileCalls: []),
+      currentUserId: currentUserId,
+    );
+    if (validationError != null) return validationError;
+
     final repository = ref.read(leadRepositoryProvider);
     final result = await repository.updateStage(
       leadId: leadId,
       stageId: stageId,
     );
     if (result.isFailure) return result.failureOrNull!.message;
+    ref.invalidate(latestMobileCallProvider(leadId));
     ref.invalidateSelf();
     await future;
     return null;

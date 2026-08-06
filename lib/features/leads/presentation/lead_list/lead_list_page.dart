@@ -53,6 +53,8 @@ class LeadListPage extends HookConsumerWidget {
       final error = await ref.read(leadNotifierProvider.notifier).updateStage(
             leadId: lead.id,
             stageId: target.id,
+            currentStageName: lead.stage?.name,
+            targetStageName: target.name,
           );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

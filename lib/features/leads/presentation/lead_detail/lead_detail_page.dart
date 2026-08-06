@@ -23,11 +23,21 @@ import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_actions_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_fab.dart';
 import 'package:odoocrm/core/services/whatsapp_service.dart';
+import 'package:odoocrm/features/mobile_call/domain/entities/latest_mobile_call_entity.dart';
+import 'package:odoocrm/features/mobile_call/presentation/providers/mobile_call_providers.dart';
+import 'package:odoocrm/features/mobile_call/presentation/widgets/call_outcome_sheet.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 enum _DetailTab { info, internalNote, remarks }
+
+class _PendingDial {
+  const _PendingDial({required this.phone, required this.dialedAt});
+
+  final String phone;
+  final DateTime dialedAt;
+}
 
 class LeadDetailPage extends HookConsumerWidget {
   const LeadDetailPage({super.key, required this.leadId});
@@ -59,8 +69,12 @@ class LeadDetailPage extends HookConsumerWidget {
     final leadAsync = ref.watch(leadDetailNotifierProvider(leadId));
     final currentUser = ref.watch(authNotifierProvider).valueOrNull;
     final stagesAsync = ref.watch(stageNotifierProvider);
+    // Prefetch latest MOBILE_CALL when Lead Detail opens.
+    ref.watch(latestMobileCallProvider(leadId));
     final isActing = useState(false);
     final tab = useState(_DetailTab.info);
+    final pendingDial = useState<_PendingDial?>(null);
+    final isLoggingCall = useState(false);
 
     Future<void> showMessage(String message) async {
       if (!context.mounted) return;
@@ -69,15 +83,76 @@ class LeadDetailPage extends HookConsumerWidget {
       );
     }
 
+    Future<void> persistCallLog(LatestMobileCallEntity call) async {
+      final stamped = call.copyWith(userId: currentUser?.id ?? call.userId);
+      isLoggingCall.value = true;
+      final result = await ref
+          .read(mobileCallRepositoryProvider)
+          .createMobileCallLog(leadId: leadId, call: stamped);
+      isLoggingCall.value = false;
+
+      ref.invalidate(latestMobileCallProvider(leadId));
+      ref.invalidate(chatterNotifierProvider(leadId));
+
+      if (result.isFailure) {
+        await showMessage(result.failureOrNull!.message);
+        return;
+      }
+      await showMessage('Call logged to Odoo');
+    }
+
+    Future<void> completePendingDial(_PendingDial pending) async {
+      if (isLoggingCall.value) return;
+
+      final reader = ref.read(callLogReaderProvider);
+      LatestMobileCallEntity? call;
+      if (reader.isSupported) {
+        call = await reader.findRecentCall(
+          phone: pending.phone,
+          dialedAt: pending.dialedAt,
+        );
+      }
+
+      if (!context.mounted) return;
+
+      call ??= await showCallOutcomeSheet(
+        context: context,
+        phone: pending.phone,
+        dialedAt: pending.dialedAt,
+      );
+
+      if (call == null || !context.mounted) return;
+      await persistCallLog(call);
+    }
+
+    useOnAppLifecycleStateChange((previous, current) {
+      if (current != AppLifecycleState.resumed) return;
+      final pending = pendingDial.value;
+      if (pending == null) return;
+      pendingDial.value = null;
+      Future.microtask(() => completePendingDial(pending));
+    });
+
     Future<void> callCustomer(LeadDetailEntity lead) async {
       final number = lead.phone ?? lead.mobile;
       if (number == null || number.isEmpty) {
         await showMessage('No phone number available');
         return;
       }
+
+      final reader = ref.read(callLogReaderProvider);
+      if (reader.isSupported) {
+        await reader.ensurePermission();
+      }
+
+      final dialedAt = DateTime.now();
+      pendingDial.value = _PendingDial(phone: number, dialedAt: dialedAt);
       final uri = Uri(scheme: 'tel', path: number);
       final launched = await launchUrl(uri);
-      if (!launched) await showMessage('Unable to open dialer');
+      if (!launched) {
+        pendingDial.value = null;
+        await showMessage('Unable to open dialer');
+      }
     }
 
     Future<void> assignToMe() async {
@@ -114,7 +189,7 @@ class LeadDetailPage extends HookConsumerWidget {
       isActing.value = true;
       final error = await ref
           .read(leadDetailNotifierProvider(leadId).notifier)
-          .updateStage(target.id);
+          .updateStage(target.id, targetStageName: target.name);
       isActing.value = false;
       ref.invalidate(leadNotifierProvider);
       await showMessage(error ?? (won ? 'Marked as Won' : 'Marked as Lost'));
@@ -136,7 +211,7 @@ class LeadDetailPage extends HookConsumerWidget {
             return sa.compareTo(sb);
           });
 
-        final selected = await showModalBottomSheet<int>(
+        final selected = await showModalBottomSheet<StageEntity>(
           context: context,
           backgroundColor: AppTheme.surface,
           shape: const RoundedRectangleBorder(
@@ -177,7 +252,7 @@ class LeadDetailPage extends HookConsumerWidget {
                         final stage = sorted[index];
                         final active = stage.id == lead.stage?.id;
                         return InkWell(
-                          onTap: () => Navigator.pop(context, stage.id),
+                          onTap: () => Navigator.pop(context, stage),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 20,
@@ -232,7 +307,7 @@ class LeadDetailPage extends HookConsumerWidget {
         isActing.value = true;
         final error = await ref
             .read(leadDetailNotifierProvider(leadId).notifier)
-            .updateStage(selected);
+            .updateStage(selected.id, targetStageName: selected.name);
         isActing.value = false;
         ref.invalidate(leadNotifierProvider);
         await showMessage(error ?? 'Stage updated');
