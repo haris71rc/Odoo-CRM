@@ -36,7 +36,10 @@ DeviceCallReader deviceCallReader(Ref ref) {
   return const DeviceCallReader();
 }
 
-/// Prefetched when Lead Detail opens. Also syncs inbound calls from device.
+/// Prefetched when Lead Detail opens.
+///
+/// Also syncs dialer-made calls from the Android call log into Odoo so calls
+/// placed outside the CRM Call button still update Call Log / stage rules.
 @riverpod
 Future<CallLog> leadCallLog(Ref ref, int leadId) async {
   final service = ref.watch(callLogServiceProvider);
@@ -47,28 +50,33 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
   );
 
   final reader = ref.read(deviceCallReaderProvider);
-  if (reader.isSupported) {
-    try {
-      final lead = await ref.read(leadDetailNotifierProvider(leadId).future);
-      final phone = lead.phone ?? lead.mobile;
-      if (phone != null && phone.isNotEmpty) {
-        final inbound = await reader.countInboundCalls(
-          phone: phone,
-          since: lead.createdDate,
-        );
-        if (inbound != null) {
-          final syncResult = await service.syncInboundCalls(
-            leadId: leadId,
-            deviceInboundCount: inbound,
-          );
-          if (syncResult.isSuccess) {
-            callLog = syncResult.valueOrNull ?? callLog;
-          }
-        }
-      }
-    } catch (_) {
-      // Lead detail may still be loading; return call log without inbound sync.
+  if (!reader.isSupported) return callLog;
+
+  try {
+    final lead = await ref.read(leadDetailNotifierProvider(leadId).future);
+    final phone = lead.phone ?? lead.mobile;
+    if (phone == null || phone.isEmpty) return callLog;
+
+    final statusOptions = await ref.read(callStatusOptionsProvider(leadId).future);
+    final deviceCalls = await reader.findCallsForLead(
+      phone: phone,
+      since: lead.createdDate,
+      statusOptions: statusOptions,
+    );
+
+    if (deviceCalls.isEmpty) return callLog;
+
+    final syncResult = await service.syncFromDevice(
+      leadId: leadId,
+      deviceCalls: deviceCalls,
+      leadCreatedAt: lead.createdDate,
+    );
+
+    if (syncResult.isSuccess) {
+      callLog = syncResult.valueOrNull ?? callLog;
     }
+  } catch (_) {
+    // Lead detail / permission may fail; keep Odoo call log as-is.
   }
 
   return callLog;

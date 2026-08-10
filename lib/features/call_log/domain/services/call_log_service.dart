@@ -2,6 +2,7 @@ import 'package:odoocrm/core/error/result.dart';
 import 'package:odoocrm/features/call_log/data/services/follow_up_stage_resolver.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dart';
+import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_updater.dart';
 import 'package:odoocrm/features/chatter/domain/repository/chatter_repository.dart';
@@ -79,6 +80,43 @@ class CallLogService {
     );
 
     if (synced.totalInboundCalls != existing.totalInboundCalls) {
+      final saveResult = await saveCallLog(leadId: leadId, callLog: synced);
+      if (saveResult.isFailure) return Error(saveResult.failureOrNull!);
+    }
+
+    return Success(synced);
+  }
+
+  /// Merges dialer-made device calls into Odoo when Lead Detail opens.
+  ///
+  /// Only outbound calls newer than the stored last call (outside the
+  /// duplicate window) are applied. Inbound totals are raised to match device.
+  Future<Result<CallLog>> syncFromDevice({
+    required int leadId,
+    required List<DeviceCallEvent> deviceCalls,
+    required DateTime? leadCreatedAt,
+  }) async {
+    final existingResult = await getCallLog(leadId);
+    if (existingResult.isFailure) {
+      return Error(existingResult.failureOrNull!);
+    }
+
+    final existing = existingResult.valueOrNull ?? const CallLog();
+    final synced = CallLogUpdater.applyDeviceSync(
+      existing: existing,
+      deviceCalls: deviceCalls,
+      leadCreatedAt: leadCreatedAt,
+    );
+
+    final changed = synced.lastCallDate != existing.lastCallDate ||
+        synced.totalDuration != existing.totalDuration ||
+        synced.totalOutboundCalls != existing.totalOutboundCalls ||
+        synced.totalInboundCalls != existing.totalInboundCalls ||
+        synced.status != existing.status ||
+        synced.firstCallDate != existing.firstCallDate ||
+        synced.responseTimeMinutes != existing.responseTimeMinutes;
+
+    if (changed) {
       final saveResult = await saveCallLog(leadId: leadId, callLog: synced);
       if (saveResult.isFailure) return Error(saveResult.failureOrNull!);
     }

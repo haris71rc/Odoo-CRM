@@ -5,6 +5,7 @@ import 'package:odoocrm/features/call_log/data/services/follow_up_stage_resolver
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log_validation_snapshot.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dart';
+import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/services/call_log_service.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_updater.dart';
@@ -348,6 +349,70 @@ void main() {
         ).totalInboundCalls,
         5,
       );
+    });
+
+    test('skips device outbound near last saved call (duplicate window)', () {
+      final last = DateTime(2026, 8, 10, 12, 0, 0);
+      expect(
+        CallLogUpdater.shouldApplyDeviceOutbound(
+          deviceAt: last.add(const Duration(seconds: 20)),
+          lastCallDate: last,
+        ),
+        isFalse,
+      );
+      expect(
+        CallLogUpdater.shouldApplyDeviceOutbound(
+          deviceAt: last.add(const Duration(minutes: 2)),
+          lastCallDate: last,
+        ),
+        isTrue,
+      );
+    });
+
+    test('applyDeviceSync merges newer dialer outbound and inbound count', () {
+      final existing = CallLog(
+        firstCallDate: DateTime(2026, 8, 10, 10, 0),
+        lastCallDate: DateTime(2026, 8, 10, 10, 0),
+        totalDuration: '01:00',
+        totalOutboundCalls: 1,
+        totalInboundCalls: 0,
+        status: 'picked',
+      );
+
+      final synced = CallLogUpdater.applyDeviceSync(
+        existing: existing,
+        deviceCalls: [
+          DeviceCallEvent(
+            at: DateTime(2026, 8, 10, 10, 0, 10), // within duplicate window
+            duration: '01:00',
+            status: 'picked',
+            isOutbound: true,
+            isInbound: false,
+          ),
+          DeviceCallEvent(
+            at: DateTime(2026, 8, 10, 11, 30),
+            duration: '00:40',
+            status: 'dnp',
+            isOutbound: true,
+            isInbound: false,
+          ),
+          DeviceCallEvent(
+            at: DateTime(2026, 8, 10, 11, 0),
+            duration: '00:00',
+            status: 'missed',
+            isOutbound: false,
+            isInbound: true,
+          ),
+        ],
+        leadCreatedAt: DateTime(2026, 8, 10, 9, 0),
+      );
+
+      expect(synced.lastCallDate, DateTime(2026, 8, 10, 11, 30));
+      expect(synced.totalOutboundCalls, 2);
+      expect(synced.totalDuration, '01:40');
+      expect(synced.status, 'dnp');
+      expect(synced.totalInboundCalls, 1);
+      expect(synced.firstCallDate, DateTime(2026, 8, 10, 10, 0));
     });
   });
 

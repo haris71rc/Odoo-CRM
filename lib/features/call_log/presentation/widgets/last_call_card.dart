@@ -5,49 +5,91 @@ import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
 
-class LastCallCard extends ConsumerWidget {
+class LastCallCard extends ConsumerStatefulWidget {
   const LastCallCard({super.key, required this.leadId});
 
   final int leadId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final callLogAsync = ref.watch(leadCallLogProvider(leadId));
+  ConsumerState<LastCallCard> createState() => _LastCallCardState();
+}
 
-    return callLogAsync.when(
-      loading: () => const _CallLogShell(
-        child: SizedBox(
-          height: 20,
-          width: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
+class _LastCallCardState extends ConsumerState<LastCallCard> {
+  CallLog? _cached;
+  var _isSyncing = false;
+
+  Future<void> _sync() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    ref.invalidate(leadCallLogProvider(widget.leadId));
+    try {
+      await ref.read(leadCallLogProvider(widget.leadId).future);
+    } catch (_) {
+      // Keep cached data; error UI handled below when no cache.
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final callLogAsync = ref.watch(leadCallLogProvider(widget.leadId));
+    final reader = ref.watch(deviceCallReaderProvider);
+
+    ref.listen(leadCallLogProvider(widget.leadId), (previous, next) {
+      final value = next.valueOrNull;
+      if (value != null && mounted) {
+        setState(() => _cached = value);
+      }
+    });
+
+    final callLog = callLogAsync.valueOrNull ?? _cached;
+    final showSync = reader.isSupported;
+    final isInitialLoading = callLog == null && callLogAsync.isLoading;
+
+    Widget body;
+    if (isInitialLoading) {
+      body = const SizedBox(
+        height: 20,
+        width: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    } else if (callLog == null && callLogAsync.hasError) {
+      body = const Text(
+        'Unable to load call information.',
+        style: TextStyle(color: AppTheme.textBody, fontSize: 13.5),
+      );
+    } else if (callLog == null || !callLog.hasAnyCallData) {
+      body = const Text(
+        'No call has been made yet.',
+        style: TextStyle(
+          color: AppTheme.textBody,
+          fontSize: 13.5,
+          fontWeight: FontWeight.w500,
         ),
-      ),
-      error: (_, _) => const _CallLogShell(
-        child: Text(
-          'Unable to load call information.',
-          style: TextStyle(color: AppTheme.textBody, fontSize: 13.5),
-        ),
-      ),
-      data: (callLog) => _CallLogShell(
-        child: callLog.hasAnyCallData
-            ? _CallDetails(callLog: callLog)
-            : const Text(
-                'No call has been made yet.',
-                style: TextStyle(
-                  color: AppTheme.textBody,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-      ),
+      );
+    } else {
+      body = _CallDetails(callLog: callLog);
+    }
+
+    return _CallLogShell(
+      isSyncing: _isSyncing,
+      onSync: showSync ? _sync : null,
+      child: body,
     );
   }
 }
 
 class _CallLogShell extends StatelessWidget {
-  const _CallLogShell({required this.child});
+  const _CallLogShell({
+    required this.child,
+    this.onSync,
+    this.isSyncing = false,
+  });
 
   final Widget child;
+  final VoidCallback? onSync;
+  final bool isSyncing;
 
   @override
   Widget build(BuildContext context) {
@@ -62,18 +104,110 @@ class _CallLogShell extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'CALL LOG',
-            style: TextStyle(
-              fontSize: 10.5,
-              letterSpacing: 0.12,
-              color: AppTheme.textMuted,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'CALL LOG',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    letterSpacing: 0.12,
+                    color: AppTheme.textMuted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (onSync != null)
+                _SyncButton(
+                  isSyncing: isSyncing,
+                  onTap: isSyncing ? null : onSync,
+                ),
+            ],
           ),
           const SizedBox(height: 10),
           child,
         ],
+      ),
+    );
+  }
+}
+
+class _SyncButton extends StatefulWidget {
+  const _SyncButton({
+    required this.isSyncing,
+    required this.onTap,
+  });
+
+  final bool isSyncing;
+  final VoidCallback? onTap;
+
+  @override
+  State<_SyncButton> createState() => _SyncButtonState();
+}
+
+class _SyncButtonState extends State<_SyncButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    if (widget.isSyncing) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SyncButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isSyncing && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.isSyncing && _controller.isAnimating) {
+      _controller.stop();
+      _controller.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          children: [
+            RotationTransition(
+              turns: _controller,
+              child: Icon(
+                Icons.sync,
+                size: 14,
+                color: widget.isSyncing
+                    ? AppTheme.navy.withValues(alpha: 0.7)
+                    : AppTheme.navy,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              widget.isSyncing ? 'Syncing' : 'Sync',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: widget.isSyncing
+                    ? AppTheme.navy.withValues(alpha: 0.7)
+                    : AppTheme.navy,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

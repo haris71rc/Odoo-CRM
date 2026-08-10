@@ -57,7 +57,7 @@ final deviceCallReaderProvider = Provider<DeviceCallReader>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef DeviceCallReaderRef = ProviderRef<DeviceCallReader>;
-String _$leadCallLogHash() => r'a4abe59ca36efe795ecf9bc76b075d0316973a97';
+String _$leadCallLogHash() => r'4269e1711c2d600bfba09e510c08f64b1d0b2842';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -80,22 +80,34 @@ class _SystemHash {
   }
 }
 
-/// Prefetched when Lead Detail opens. Also syncs inbound calls from device.
+/// Prefetched when Lead Detail opens.
+///
+/// Also syncs dialer-made calls from the Android call log into Odoo so calls
+/// placed outside the CRM Call button still update Call Log / stage rules.
 ///
 /// Copied from [leadCallLog].
 @ProviderFor(leadCallLog)
 const leadCallLogProvider = LeadCallLogFamily();
 
-/// Prefetched when Lead Detail opens. Also syncs inbound calls from device.
+/// Prefetched when Lead Detail opens.
+///
+/// Also syncs dialer-made calls from the Android call log into Odoo so calls
+/// placed outside the CRM Call button still update Call Log / stage rules.
 ///
 /// Copied from [leadCallLog].
 class LeadCallLogFamily extends Family<AsyncValue<CallLog>> {
-  /// Prefetched when Lead Detail opens. Also syncs inbound calls from device.
+  /// Prefetched when Lead Detail opens.
+  ///
+  /// Also syncs dialer-made calls from the Android call log into Odoo so calls
+  /// placed outside the CRM Call button still update Call Log / stage rules.
   ///
   /// Copied from [leadCallLog].
   const LeadCallLogFamily();
 
-  /// Prefetched when Lead Detail opens. Also syncs inbound calls from device.
+  /// Prefetched when Lead Detail opens.
+  ///
+  /// Also syncs dialer-made calls from the Android call log into Odoo so calls
+  /// placed outside the CRM Call button still update Call Log / stage rules.
   ///
   /// Copied from [leadCallLog].
   LeadCallLogProvider call(int leadId) {
@@ -124,11 +136,17 @@ class LeadCallLogFamily extends Family<AsyncValue<CallLog>> {
   String? get name => r'leadCallLogProvider';
 }
 
-/// Prefetched when Lead Detail opens. Also syncs inbound calls from device.
+/// Prefetched when Lead Detail opens.
+///
+/// Also syncs dialer-made calls from the Android call log into Odoo so calls
+/// placed outside the CRM Call button still update Call Log / stage rules.
 ///
 /// Copied from [leadCallLog].
 class LeadCallLogProvider extends AutoDisposeFutureProvider<CallLog> {
-  /// Prefetched when Lead Detail opens. Also syncs inbound calls from device.
+  /// Prefetched when Lead Detail opens.
+  ///
+  /// Also syncs dialer-made calls from the Android call log into Odoo so calls
+  /// placed outside the CRM Call button still update Call Log / stage rules.
   ///
   /// Copied from [leadCallLog].
   LeadCallLogProvider(int leadId)

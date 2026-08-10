@@ -5,6 +5,7 @@ import 'package:odoocrm/core/utils/phone_number_utils.dart';
 import 'package:odoocrm/features/call_log/data/services/call_status_mapper.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dart';
+import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 /// Reads native call log after the dialer returns (Android).
@@ -68,7 +69,8 @@ class DeviceCallReader {
       if (best == null) return null;
       return _toCallLog(
         best,
-        dialedAt: dialedAt,
+        // Prefer dial time for CRM-initiated calls (stable wall-clock).
+        at: dialedAt,
         statusOptions: statusOptions,
       );
     } catch (_) {
@@ -76,44 +78,95 @@ class DeviceCallReader {
     }
   }
 
-  /// Counts incoming calls from [phone] in the device call log (Android only).
+  /// Device calls for [phone] since [since], oldest first.
   ///
-  /// Requires `READ_CALL_LOG` / phone permission. Returns null when unsupported
-  /// or permission is denied.
+  /// Used when Lead Detail opens to sync dialer-made calls into Odoo.
+  Future<List<DeviceCallEvent>> findCallsForLead({
+    required String phone,
+    DateTime? since,
+    List<CallStatusOption> statusOptions = const [],
+  }) async {
+    if (!isSupported) return const [];
+
+    final permitted = await ensurePermission();
+    if (!permitted) return const [];
+
+    final normalizedTarget = PhoneNumberUtils.normalize(phone);
+    if (normalizedTarget.isEmpty) return const [];
+
+    try {
+      final fromMs = (since ?? DateTime.fromMillisecondsSinceEpoch(0))
+          .subtract(const Duration(hours: 1))
+          .millisecondsSinceEpoch;
+
+      final entries = await native.CallLog.query(dateFrom: fromMs);
+      final events = <DeviceCallEvent>[];
+
+      for (final entry in entries) {
+        final number = entry.number ?? entry.formattedNumber ?? '';
+        if (!_numbersMatch(normalizedTarget, number)) continue;
+
+        final ts = entry.timestamp;
+        if (ts == null) continue;
+        if (ts < fromMs) continue;
+
+        final at = DateTime.fromMillisecondsSinceEpoch(ts);
+        if (since != null && at.isBefore(since.subtract(const Duration(days: 1)))) {
+          continue;
+        }
+
+        final durationSeconds = entry.duration ?? 0;
+        final isOutbound = _isOutbound(entry.callType);
+        final isInbound = _isInbound(entry.callType);
+        if (!isOutbound && !isInbound) continue;
+
+        final status = statusOptions.isEmpty
+            ? _legacyMapStatus(entry.callType, durationSeconds)
+            : _statusMapper.mapDeviceStatus(
+                type: entry.callType,
+                durationSeconds: durationSeconds,
+                options: statusOptions,
+              );
+
+        events.add(
+          DeviceCallEvent(
+            at: at,
+            duration: _formatDuration(durationSeconds),
+            status: status,
+            isOutbound: isOutbound,
+            isInbound: isInbound,
+          ),
+        );
+      }
+
+      events.sort((a, b) => a.at.compareTo(b.at));
+      return events;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Counts incoming calls from [phone] in the device call log (Android only).
   Future<int?> countInboundCalls({
     required String phone,
     DateTime? since,
   }) async {
     if (!isSupported) return null;
-
     final permitted = await ensurePermission();
     if (!permitted) return null;
 
-    final normalizedTarget = PhoneNumberUtils.normalize(phone);
-    if (normalizedTarget.isEmpty) return null;
-
-    try {
-      final fromMs = (since ?? DateTime.fromMillisecondsSinceEpoch(0))
-          .subtract(const Duration(days: 1))
-          .millisecondsSinceEpoch;
-
-      final entries = await native.CallLog.query(dateFrom: fromMs);
-      var count = 0;
-      for (final entry in entries) {
-        if (!_isInbound(entry.callType)) continue;
-        final number = entry.number ?? entry.formattedNumber ?? '';
-        if (!_numbersMatch(normalizedTarget, number)) continue;
-        count++;
-      }
-      return count;
-    } catch (_) {
-      return null;
-    }
+    final events = await findCallsForLead(phone: phone, since: since);
+    return events.where((e) => e.isInbound).length;
   }
 
   bool _isInbound(native.CallType? type) {
     return type == native.CallType.incoming ||
         type == native.CallType.wifiIncoming;
+  }
+
+  bool _isOutbound(native.CallType? type) {
+    return type == native.CallType.outgoing ||
+        type == native.CallType.wifiOutgoing;
   }
 
   bool _numbersMatch(String normalizedTarget, String candidate) {
@@ -132,7 +185,7 @@ class DeviceCallReader {
 
   CallLog _toCallLog(
     native.CallLogEntry entry, {
-    required DateTime dialedAt,
+    required DateTime at,
     required List<CallStatusOption> statusOptions,
   }) {
     final durationSeconds = entry.duration ?? 0;
@@ -145,7 +198,7 @@ class DeviceCallReader {
           );
 
     return CallLog(
-      lastCallDate: dialedAt,
+      lastCallDate: at,
       duration: _formatDuration(durationSeconds),
       status: status,
     );
