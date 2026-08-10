@@ -56,6 +56,7 @@ class LeadRemoteDatasource {
     bool priorityOnly = false,
     bool openOnly = false,
     List<int> excludeStageIds = const [],
+    List<int> tagIds = const [],
   }) async {
     final extra = <List<dynamic>>[];
 
@@ -95,6 +96,11 @@ class LeadRemoteDatasource {
         extra.add(['stage_id.is_won', '=', false]);
         extra.add(['active', '=', true]);
       }
+    }
+
+    // HOT_LEAD / WARM_LEAD (OR within the list; AND with other filters).
+    if (tagIds.isNotEmpty) {
+      extra.add(['tag_ids', 'in', tagIds]);
     }
 
     final domain = AppEnvironment.mergeDomain(extra);

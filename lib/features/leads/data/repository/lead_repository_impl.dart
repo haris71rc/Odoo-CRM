@@ -29,6 +29,7 @@ class LeadRepositoryImpl implements LeadRepository {
     bool priorityOnly = false,
     bool openOnly = false,
     List<int> excludeStageIds = const [],
+    List<int> tagIds = const [],
   }) async {
     try {
       final dtos = await _datasource.searchRead(
@@ -39,6 +40,7 @@ class LeadRepositoryImpl implements LeadRepository {
         priorityOnly: priorityOnly,
         openOnly: openOnly,
         excludeStageIds: excludeStageIds,
+        tagIds: tagIds,
       );
       return Success(_leadMapper.toEntityList(dtos));
     } on Failure catch (failure) {

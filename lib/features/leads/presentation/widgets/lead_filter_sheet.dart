@@ -5,6 +5,8 @@ import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_date_filter.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
+import 'package:odoocrm/features/tags/domain/entities/lead_temperature_tag.dart';
+import 'package:odoocrm/features/tags/presentation/providers/tag_providers.dart';
 import 'package:odoocrm/features/users/presentation/providers/users_notifier.dart';
 
 Future<void> showLeadFilterSheet({
@@ -40,6 +42,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
   late bool _untouched;
   // late bool _priorityOnly; // temporarily disabled
   late bool _openOnly;
+  late Set<LeadTemperatureTag> _temperatureTags;
 
   final _dateFormat = DateFormat('dd/MM');
 
@@ -58,6 +61,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
     _untouched = current.untouched;
     // _priorityOnly = current.priorityOnly;
     _openOnly = current.openOnly;
+    _temperatureTags = Set<LeadTemperatureTag>.from(current.temperatureTags);
   }
 
   Future<void> _pickCustomRange() async {
@@ -150,6 +154,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
           untouched: _untouched,
           priorityOnly: false, // disabled: was _priorityOnly
           openOnly: _openOnly,
+          temperatureTags: _temperatureTags,
         );
     Navigator.of(context).pop();
   }
@@ -163,6 +168,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
   Widget build(BuildContext context) {
     final maxHeight = MediaQuery.sizeOf(context).height * 0.82;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final temperatureTagsAsync = ref.watch(leadTemperatureTagsNotifierProvider);
 
     final filterDefs = [
       (
@@ -275,6 +281,75 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
                       subtitle: f.$3,
                       trailing: _CheckBox(active: f.$4),
                     ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+                    child: Text(
+                      'LEAD TYPE',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        letterSpacing: 0.12,
+                        color: AppTheme.textMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  temperatureTagsAsync.when(
+                    loading: () => const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                    error: (_, _) => const Padding(
+                      padding: EdgeInsets.fromLTRB(20, 8, 20, 4),
+                      child: Text(
+                        'Unable to load lead tags',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                    ),
+                    data: (tags) {
+                      final available = <LeadTemperatureTag>{};
+                      for (final tag in tags) {
+                        final mapped =
+                            LeadTemperatureTag.fromApiName(tag.name);
+                        if (mapped != null) available.add(mapped);
+                      }
+
+                      if (available.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.fromLTRB(20, 8, 20, 4),
+                          child: Text(
+                            'Hot / Warm tags not available',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppTheme.textMuted,
+                            ),
+                          ),
+                        );
+                      }
+
+                      return Column(
+                        children: [
+                          for (final option in LeadTemperatureTag.values)
+                            if (available.contains(option))
+                              _SheetRow(
+                                active: _temperatureTags.contains(option),
+                                onTap: () => setState(() {
+                                  if (!_temperatureTags.add(option)) {
+                                    _temperatureTags.remove(option);
+                                  }
+                                }),
+                                title: option.label,
+                                subtitle: option.apiName,
+                                trailing: _CheckBox(
+                                  active: _temperatureTags.contains(option),
+                                ),
+                              ),
+                        ],
+                      );
+                    },
+                  ),
                   const Padding(
                     padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
                     child: Text(

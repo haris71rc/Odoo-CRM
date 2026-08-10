@@ -10,6 +10,8 @@ import 'package:odoocrm/features/leads/domain/repository/lead_repository.dart';
 import 'package:odoocrm/features/leads/domain/utils/lead_date_range.dart';
 import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
+import 'package:odoocrm/features/tags/domain/entities/lead_temperature_tag.dart';
+import 'package:odoocrm/features/tags/presentation/providers/tag_providers.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'lead_notifier.g.dart';
@@ -34,6 +36,7 @@ typedef LeadServerFilterKey = ({
   bool untouched,
   bool priorityOnly,
   bool openOnly,
+  List<LeadTemperatureTag> temperatureTags,
 });
 
 /// Applied lead list filters (Odoo domain + local pipeline/search).
@@ -52,6 +55,7 @@ class LeadFilterState {
     this.untouched = false,
     this.priorityOnly = false,
     this.openOnly = false,
+    this.temperatureTags = const {},
   });
 
   final String searchQuery;
@@ -68,6 +72,9 @@ class LeadFilterState {
   final bool priorityOnly;
   final bool openOnly;
 
+  /// Selected HOT_LEAD / WARM_LEAD filters (multi-select).
+  final Set<LeadTemperatureTag> temperatureTags;
+
   bool get assignedToMeOnly => pipelineTab == LeadPipelineTab.mine;
 
   int get localFilterCount {
@@ -79,6 +86,7 @@ class LeadFilterState {
     if (dateFilter != null) count++;
     if (assignedUserId != null) count++;
     if (stageId != null) count++;
+    count += temperatureTags.length;
     return count;
   }
 
@@ -89,20 +97,26 @@ class LeadFilterState {
         todayMine ||
         untouched ||
         // priorityOnly ||
-        openOnly;
+        openOnly ||
+        temperatureTags.isNotEmpty;
   }
 
-  LeadServerFilterKey get serverFilterKey => (
-        dateFilter: dateFilter,
-        customStartDate: customStartDate,
-        customEndDate: customEndDate,
-        assignedUserId: assignedUserId,
-        stageId: stageId,
-        todayMine: todayMine,
-        untouched: untouched,
-        priorityOnly: false, // disabled
-        openOnly: openOnly,
-      );
+  LeadServerFilterKey get serverFilterKey {
+    final tags = temperatureTags.toList()
+      ..sort((a, b) => a.apiName.compareTo(b.apiName));
+    return (
+      dateFilter: dateFilter,
+      customStartDate: customStartDate,
+      customEndDate: customEndDate,
+      assignedUserId: assignedUserId,
+      stageId: stageId,
+      todayMine: todayMine,
+      untouched: untouched,
+      priorityOnly: false, // disabled
+      openOnly: openOnly,
+      temperatureTags: tags,
+    );
+  }
 
   LeadDateRange? get resolvedDateRange => LeadDateRange.resolve(
         filter: dateFilter,
@@ -129,10 +143,12 @@ class LeadFilterState {
     bool? untouched,
     bool? priorityOnly,
     bool? openOnly,
+    Set<LeadTemperatureTag>? temperatureTags,
     bool clearDateFilter = false,
     bool clearCustomDates = false,
     bool clearAssignedUser = false,
     bool clearStage = false,
+    bool clearTemperatureTags = false,
   }) {
     return LeadFilterState(
       searchQuery: searchQuery ?? this.searchQuery,
@@ -153,6 +169,9 @@ class LeadFilterState {
       untouched: untouched ?? this.untouched,
       priorityOnly: priorityOnly ?? this.priorityOnly,
       openOnly: openOnly ?? this.openOnly,
+      temperatureTags: clearTemperatureTags
+          ? const {}
+          : (temperatureTags ?? this.temperatureTags),
     );
   }
 }
@@ -198,7 +217,21 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
       //   state = state.copyWith(priorityOnly: !state.priorityOnly);
       case 'open':
         state = state.copyWith(openOnly: !state.openOnly);
+      case 'hot':
+        _toggleTemperatureTag(LeadTemperatureTag.hot);
+      case 'warm':
+        _toggleTemperatureTag(LeadTemperatureTag.warm);
     }
+  }
+
+  void toggleTemperatureTag(LeadTemperatureTag tag) {
+    _toggleTemperatureTag(tag);
+  }
+
+  void _toggleTemperatureTag(LeadTemperatureTag tag) {
+    final next = Set<LeadTemperatureTag>.from(state.temperatureTags);
+    if (!next.add(tag)) next.remove(tag);
+    state = state.copyWith(temperatureTags: next);
   }
 
   void clearLocalFilters() {
@@ -211,6 +244,7 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
       clearCustomDates: true,
       clearAssignedUser: true,
       clearStage: true,
+      clearTemperatureTags: true,
     );
   }
 
@@ -226,6 +260,10 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
     state = state.copyWith(clearStage: true);
   }
 
+  void clearTemperatureTags() {
+    state = state.copyWith(clearTemperatureTags: true);
+  }
+
   void applyFilters({
     LeadDateFilter? dateFilter,
     DateTime? customStartDate,
@@ -238,6 +276,7 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
     bool? untouched,
     bool? priorityOnly,
     bool? openOnly,
+    Set<LeadTemperatureTag>? temperatureTags,
   }) {
     var nextTodayMine = todayMine ?? state.todayMine;
     var nextUserId = assignedUserId;
@@ -287,6 +326,7 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
       untouched: nextUntouched,
       priorityOnly: priorityOnly ?? state.priorityOnly,
       openOnly: openOnly ?? state.openOnly,
+      temperatureTags: temperatureTags ?? state.temperatureTags,
     );
   }
 
@@ -358,6 +398,20 @@ class LeadNotifier extends _$LeadNotifier {
       }
     }
 
+    List<int> tagIds = const [];
+    if (serverKey.temperatureTags.isNotEmpty) {
+      try {
+        await ref.watch(leadTemperatureTagsNotifierProvider.future);
+      } catch (_) {
+        // Tag metadata unavailable — skip tag domain rather than crashing.
+      }
+      tagIds = ref
+          .read(leadTemperatureTagsNotifierProvider.notifier)
+          .resolveIds(serverKey.temperatureTags);
+      // Selected tags exist in state but none resolved → empty result.
+      if (tagIds.isEmpty) return const [];
+    }
+
     final result = await repository.getLeads(
       startDate: range?.start,
       endDate: range?.end,
@@ -367,6 +421,7 @@ class LeadNotifier extends _$LeadNotifier {
       priorityOnly: false,
       openOnly: serverKey.openOnly,
       excludeStageIds: excludeStageIds,
+      tagIds: tagIds,
     );
 
     return result.when(

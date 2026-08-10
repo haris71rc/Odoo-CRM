@@ -11,6 +11,7 @@ abstract class LeadRepository {
     bool priorityOnly = false,
     bool openOnly = false,
     List<int> excludeStageIds = const [],
+    List<int> tagIds = const [],
   });
 
   Future<Result<LeadDetailEntity>> getLeadDetail(int leadId);

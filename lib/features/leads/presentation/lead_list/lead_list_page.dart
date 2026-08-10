@@ -16,6 +16,7 @@ import 'package:odoocrm/features/leads/presentation/widgets/lead_filter_sheet.da
 import 'package:odoocrm/features/leads/presentation/widgets/lead_search_sheet.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
+import 'package:odoocrm/features/tags/domain/entities/lead_temperature_tag.dart';
 
 class LeadListPage extends HookConsumerWidget {
   const LeadListPage({super.key});
@@ -409,6 +410,22 @@ class _FilterChipsRow extends ConsumerWidget {
               child: Text(chip.$2),
             ),
             const SizedBox(width: 8),
+          ],
+          for (final tag in LeadTemperatureTag.values) ...[
+            if (filter.temperatureTags.contains(tag)) ...[
+              _ChipButton(
+                active: true,
+                onTap: () => notifier.toggleTemperatureTag(tag),
+                child: Row(
+                  children: [
+                    Text(tag.apiName),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.close, size: 14),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
           ],
           if (filter.dateFilter != null) ...[
             _ChipButton(
