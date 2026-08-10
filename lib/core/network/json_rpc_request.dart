@@ -97,4 +97,36 @@ abstract class JsonRpcRequest with _$JsonRpcRequest {
       },
     );
   }
+
+  /// Odoo form save used for `lead_properties` updates.
+  factory JsonRpcRequest.webSave({
+    required String model,
+    required List<int> recordIds,
+    required Map<String, dynamic> values,
+    required int uid,
+    List<int> allowedCompanyIds = const [],
+    Map<String, dynamic>? specification,
+    String lang = 'en_US',
+    String tz = 'Asia/Kolkata',
+  }) {
+    final context = <String, dynamic>{
+      'lang': lang,
+      'tz': tz,
+      'uid': uid,
+      if (allowedCompanyIds.isNotEmpty)
+        'allowed_company_ids': allowedCompanyIds,
+    };
+
+    return JsonRpcRequest(
+      params: {
+        'model': model,
+        'method': 'web_save',
+        'args': [recordIds, values],
+        'kwargs': {
+          'context': context,
+          if (specification != null) 'specification': specification,
+        },
+      },
+    );
+  }
 }

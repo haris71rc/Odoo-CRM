@@ -23,11 +23,22 @@ import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_actions_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_fab.dart';
 import 'package:odoocrm/core/services/whatsapp_service.dart';
+import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
+import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
+import 'package:odoocrm/features/call_log/presentation/widgets/call_log_dialogs.dart';
+import 'package:odoocrm/features/call_log/presentation/widgets/last_call_card.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 enum _DetailTab { info, internalNote, remarks }
+
+class _PendingDial {
+  const _PendingDial({required this.phone, required this.dialedAt});
+
+  final String phone;
+  final DateTime dialedAt;
+}
 
 class LeadDetailPage extends HookConsumerWidget {
   const LeadDetailPage({super.key, required this.leadId});
@@ -59,8 +70,11 @@ class LeadDetailPage extends HookConsumerWidget {
     final leadAsync = ref.watch(leadDetailNotifierProvider(leadId));
     final currentUser = ref.watch(authNotifierProvider).valueOrNull;
     final stagesAsync = ref.watch(stageNotifierProvider);
+    ref.watch(leadCallLogProvider(leadId));
     final isActing = useState(false);
     final tab = useState(_DetailTab.info);
+    final pendingDial = useState<_PendingDial?>(null);
+    final isLoggingCall = useState(false);
 
     Future<void> showMessage(String message) async {
       if (!context.mounted) return;
@@ -69,15 +83,92 @@ class LeadDetailPage extends HookConsumerWidget {
       );
     }
 
+    Future<void> showStageValidationError(String message) async {
+      if (!context.mounted) return;
+      await showCallValidationDialog(context, message);
+    }
+
+    Future<void> persistCallLog(CallLog callEvent) async {
+      isLoggingCall.value = true;
+
+      final lead = leadAsync.valueOrNull;
+      final result = await ref.read(callLogServiceProvider).recordOutboundCall(
+            leadId: leadId,
+            callEvent: callEvent,
+            leadCreatedAt: lead?.createdDate,
+          );
+      isLoggingCall.value = false;
+
+      ref.invalidate(leadCallLogProvider(leadId));
+
+      if (result.isFailure) {
+        await showMessage(result.failureOrNull!.message);
+        return;
+      }
+      await showMessage('Call saved to lead');
+    }
+
+    Future<void> completePendingDial(_PendingDial pending) async {
+      if (isLoggingCall.value) return;
+
+      final statusOptions =
+          await ref.read(callStatusOptionsProvider(leadId).future);
+      final reader = ref.read(deviceCallReaderProvider);
+      CallLog? callLog;
+      if (reader.isSupported) {
+        callLog = await reader.findRecentCall(
+          phone: pending.phone,
+          dialedAt: pending.dialedAt,
+          statusOptions: statusOptions,
+        );
+      }
+
+      if (!context.mounted) return;
+
+      if (callLog != null) {
+        // Device call log found — save directly using actual duration.
+        await persistCallLog(callLog);
+        return;
+      }
+
+      callLog = await showCallOutcomeSheet(
+        context: context,
+        dialedAt: pending.dialedAt,
+        statusOptions: statusOptions,
+      );
+
+      if (callLog == null || !context.mounted) return;
+      await persistCallLog(callLog);
+    }
+
+    useOnAppLifecycleStateChange((previous, current) {
+      if (current != AppLifecycleState.resumed) return;
+      final pending = pendingDial.value;
+      if (pending == null) return;
+      pendingDial.value = null;
+      Future.microtask(() => completePendingDial(pending));
+    });
+
     Future<void> callCustomer(LeadDetailEntity lead) async {
       final number = lead.phone ?? lead.mobile;
       if (number == null || number.isEmpty) {
         await showMessage('No phone number available');
         return;
       }
+
+      final reader = ref.read(deviceCallReaderProvider);
+      if (reader.isSupported) {
+        await reader.ensurePermission();
+      }
+
+      final dialedAt = DateTime.now();
+      pendingDial.value = _PendingDial(phone: number, dialedAt: dialedAt);
       final uri = Uri(scheme: 'tel', path: number);
       final launched = await launchUrl(uri);
-      if (!launched) await showMessage('Unable to open dialer');
+      if (!launched) {
+        pendingDial.value = null;
+        await showMessage('Unable to open dialer');
+      }
     }
 
     Future<void> assignToMe() async {
@@ -114,10 +205,14 @@ class LeadDetailPage extends HookConsumerWidget {
       isActing.value = true;
       final error = await ref
           .read(leadDetailNotifierProvider(leadId).notifier)
-          .updateStage(target.id);
+          .updateStage(target.id, targetStageName: target.name);
       isActing.value = false;
       ref.invalidate(leadNotifierProvider);
-      await showMessage(error ?? (won ? 'Marked as Won' : 'Marked as Lost'));
+      if (error != null) {
+        await showStageValidationError(error);
+        return;
+      }
+      await showMessage(won ? 'Marked as Won' : 'Marked as Lost');
     }
 
     Future<void> openStageSheet(LeadDetailEntity lead) async {
@@ -136,7 +231,7 @@ class LeadDetailPage extends HookConsumerWidget {
             return sa.compareTo(sb);
           });
 
-        final selected = await showModalBottomSheet<int>(
+        final selected = await showModalBottomSheet<StageEntity>(
           context: context,
           backgroundColor: AppTheme.surface,
           shape: const RoundedRectangleBorder(
@@ -177,7 +272,7 @@ class LeadDetailPage extends HookConsumerWidget {
                         final stage = sorted[index];
                         final active = stage.id == lead.stage?.id;
                         return InkWell(
-                          onTap: () => Navigator.pop(context, stage.id),
+                          onTap: () => Navigator.pop(context, stage),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 20,
@@ -232,10 +327,14 @@ class LeadDetailPage extends HookConsumerWidget {
         isActing.value = true;
         final error = await ref
             .read(leadDetailNotifierProvider(leadId).notifier)
-            .updateStage(selected);
+            .updateStage(selected.id, targetStageName: selected.name);
         isActing.value = false;
         ref.invalidate(leadNotifierProvider);
-        await showMessage(error ?? 'Stage updated');
+        if (error != null) {
+          await showStageValidationError(error);
+          return;
+        }
+        await showMessage('Stage updated');
       } catch (e) {
         isActing.value = false;
         await showMessage(e is Failure ? e.message : e.toString());
@@ -494,6 +593,7 @@ class LeadDetailPage extends HookConsumerWidget {
                         await ref
                             .read(chatterNotifierProvider(leadId).notifier)
                             .refresh();
+                        ref.invalidate(leadCallLogProvider(leadId));
                       },
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(14, 14, 14, 168),
@@ -501,6 +601,7 @@ class LeadDetailPage extends HookConsumerWidget {
                           if (tab.value == _DetailTab.info)
                             _DetailsTab(
                               lead: lead,
+                              leadId: leadId,
                               isMine: isMine,
                               isActing: isActing.value,
                               onAssign: assignToMe,
@@ -770,6 +871,7 @@ class _DetailTabBtn extends StatelessWidget {
 class _DetailsTab extends StatelessWidget {
   const _DetailsTab({
     required this.lead,
+    required this.leadId,
     required this.isMine,
     required this.isActing,
     required this.onAssign,
@@ -777,6 +879,7 @@ class _DetailsTab extends StatelessWidget {
   });
 
   final LeadDetailEntity lead;
+  final int leadId;
   final bool isMine;
   final bool isActing;
   final VoidCallback onAssign;
@@ -899,6 +1002,8 @@ class _DetailsTab extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        LastCallCard(leadId: leadId),
         const SizedBox(height: 12),
         _KeyValueCard(title: 'Contact', rows: contactRows),
         const SizedBox(height: 12),

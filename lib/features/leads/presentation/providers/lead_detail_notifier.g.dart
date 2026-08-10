@@ -7,7 +7,7 @@ part of 'lead_detail_notifier.dart';
 // **************************************************************************
 
 String _$leadDetailNotifierHash() =>
-    r'92dbf08668d07fc25b47a10db4ed9a2fb776ea4c';
+    r'e7b3cc8867c25a1a48f2d20a27ea35d5514d69c5';
 
 /// Copied from Dart SDK
 class _SystemHash {

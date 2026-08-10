@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
+import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
 import 'package:odoocrm/features/leads/data/datasource/lead_remote_datasource.dart';
 import 'package:odoocrm/features/leads/data/repository/lead_repository_impl.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_date_filter.dart';
@@ -382,13 +383,29 @@ class LeadNotifier extends _$LeadNotifier {
   Future<String?> updateStage({
     required int leadId,
     required int stageId,
+    String? currentStageName,
+    String? targetStageName,
   }) async {
+    final validation = await ref.read(callLogServiceProvider).validateStageChange(
+          leadId: leadId,
+          currentStageName: currentStageName,
+          targetStageName: targetStageName,
+        );
+
+    if (validation.isFailure) {
+      return validation.failureOrNull!.message;
+    }
+
+    final validationError = validation.valueOrNull;
+    if (validationError != null) return validationError;
+
     final repository = ref.read(leadRepositoryProvider);
     final result = await repository.updateStage(
       leadId: leadId,
       stageId: stageId,
     );
     if (result.isFailure) return result.failureOrNull!.message;
+    ref.invalidate(leadCallLogProvider(leadId));
     ref.invalidateSelf();
     await future;
     return null;

@@ -1,3 +1,4 @@
+import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -33,7 +34,28 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     return null;
   }
 
-  Future<String?> updateStage(int stageId) async {
+  Future<String?> updateStage(
+    int stageId, {
+    String? targetStageName,
+  }) async {
+    final lead = state.valueOrNull;
+    if (lead != null && lead.stage?.id == stageId) {
+      return null;
+    }
+
+    final validation = await ref.read(callLogServiceProvider).validateStageChange(
+          leadId: leadId,
+          currentStageName: lead?.stage?.name,
+          targetStageName: targetStageName,
+        );
+
+    if (validation.isFailure) {
+      return validation.failureOrNull!.message;
+    }
+
+    final validationError = validation.valueOrNull;
+    if (validationError != null) return validationError;
+
     final repository = ref.read(leadRepositoryProvider);
     final result = await repository.updateStage(
       leadId: leadId,
@@ -42,6 +64,7 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
 
     if (result.isFailure) return result.failureOrNull!.message;
 
+    ref.invalidate(leadCallLogProvider(leadId));
     ref.invalidateSelf();
     await future;
     return null;
@@ -62,6 +85,7 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
   }
 
   Future<void> refresh() async {
+    ref.invalidate(leadCallLogProvider(leadId));
     ref.invalidateSelf();
     await future;
   }
