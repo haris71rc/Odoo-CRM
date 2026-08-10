@@ -135,21 +135,21 @@ class LeadListPage extends HookConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  _DailyTarget(
-                    done: leadsAsync.maybeWhen(
-                      data: (leads) => leads
-                          .where(
-                            (l) =>
-                                currentUser != null &&
-                                l.assignedUser?.id == currentUser.id &&
-                                LeadListFilters.isCreatedToday(l),
-                          )
-                          .length,
-                      orElse: () => 0,
-                    ),
-                    goal: _targetGoal,
-                  ),
-                  const SizedBox(height: 12),
+                  // _DailyTarget(
+                  //   done: leadsAsync.maybeWhen(
+                  //     data: (leads) => leads
+                  //         .where(
+                  //           (l) =>
+                  //               currentUser != null &&
+                  //               l.assignedUser?.id == currentUser.id &&
+                  //               LeadListFilters.isCreatedToday(l),
+                  //         )
+                  //         .length,
+                  //     orElse: () => 0,
+                  //   ),
+                  //   goal: _targetGoal,
+                  // ),
+                  // const SizedBox(height: 12),
                   InkWell(
                     onTap: () => showLeadSearchSheet(context: context),
                     borderRadius: BorderRadius.circular(11),

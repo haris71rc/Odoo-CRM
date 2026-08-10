@@ -46,4 +46,13 @@ class SecureStorageService {
       _storage.delete(key: AppConstants.userLoginKey),
     ]);
   }
+
+  Future<bool> readFlag(String key) async {
+    final value = await _storage.read(key: key);
+    return value == '1' || value == 'true';
+  }
+
+  Future<void> writeFlag(String key, bool value) async {
+    await _storage.write(key: key, value: value ? '1' : '0');
+  }
 }
