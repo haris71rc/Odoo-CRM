@@ -34,6 +34,23 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     return null;
   }
 
+  /// Assigns the lead to [userId] when that user exists and is not already
+  /// the salesperson. Used after the logged-in user has called the lead.
+  ///
+  /// Returns `true` when assignment was applied successfully.
+  Future<bool> autoAssignCaller(int? userId) async {
+    if (userId == null) return false;
+
+    final lead = state.valueOrNull ?? await future;
+    if (lead.assignedUser?.id == userId) return false;
+
+    final error = await assignToUser(userId);
+    if (error != null) return false;
+
+    ref.invalidate(leadNotifierProvider);
+    return true;
+  }
+
   Future<String?> updateStage(
     int stageId, {
     String? targetStageName,

@@ -107,7 +107,14 @@ class LeadDetailPage extends HookConsumerWidget {
         await showMessage(result.failureOrNull!.message);
         return;
       }
-      await showMessage('Call saved to lead');
+
+      final assigned = await ref
+          .read(leadDetailNotifierProvider(leadId).notifier)
+          .autoAssignCaller(currentUser?.id);
+
+      await showMessage(
+        assigned ? 'Call saved and assigned to you' : 'Call saved to lead',
+      );
     }
 
     Future<void> completePendingDial(_PendingDial pending) async {

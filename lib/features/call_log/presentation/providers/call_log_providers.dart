@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
+import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/call_log/data/datasource/call_log_remote_datasource.dart';
 import 'package:odoocrm/features/call_log/data/repository/call_log_repository_impl.dart';
 import 'package:odoocrm/features/call_log/data/services/device_call_reader.dart';
@@ -36,10 +37,20 @@ DeviceCallReader deviceCallReader(Ref ref) {
   return const DeviceCallReader();
 }
 
+bool _hasNewOutboundCall(CallLog before, CallLog after) {
+  final beforeOutbound = before.totalOutboundCalls ?? 0;
+  final afterOutbound = after.totalOutboundCalls ?? 0;
+  if (afterOutbound > beforeOutbound) return true;
+  if (after.lastCallDate == null) return false;
+  return after.lastCallDate != before.lastCallDate;
+}
+
 /// Prefetched when Lead Detail opens.
 ///
 /// Also syncs dialer-made calls from the Android call log into Odoo so calls
 /// placed outside the CRM Call button still update Call Log / stage rules.
+/// When a new outbound call is synced, auto-assigns the lead to the logged-in
+/// user if they exist and are not already the salesperson.
 @riverpod
 Future<CallLog> leadCallLog(Ref ref, int leadId) async {
   final service = ref.watch(callLogServiceProvider);
@@ -66,6 +77,7 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
 
     if (deviceCalls.isEmpty) return callLog;
 
+    final previous = callLog;
     final syncResult = await service.syncFromDevice(
       leadId: leadId,
       deviceCalls: deviceCalls,
@@ -74,6 +86,12 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
 
     if (syncResult.isSuccess) {
       callLog = syncResult.valueOrNull ?? callLog;
+      if (_hasNewOutboundCall(previous, callLog)) {
+        final currentUser = ref.read(authNotifierProvider).valueOrNull;
+        await ref
+            .read(leadDetailNotifierProvider(leadId).notifier)
+            .autoAssignCaller(currentUser?.id);
+      }
     }
   } catch (_) {
     // Lead detail / permission may fail; keep Odoo call log as-is.
