@@ -27,10 +27,31 @@ class LeadListFilters {
     return n == 'new prospect' || n == 'new prospects';
   }
 
+  /// DigiLawyer "Proposal" and Odoo default "Proposition" stages.
+  static bool isProposalStage(String? name) {
+    final n = (name ?? '').toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
+    return n == 'proposal' ||
+        n == 'proposition' ||
+        n.contains('proposal') ||
+        n.contains('proposition');
+  }
+
   /// Resolves New Prospect / New Prospects stage id from fetched stages.
   static int? findNewProspectStageId(Iterable<StageEntity> stages) {
     for (final stage in stages) {
       if (isNewProspectStage(stage.name)) return stage.id;
+    }
+    return null;
+  }
+
+  /// Resolves Proposal / Proposition stage id from fetched stages.
+  static int? findProposalStageId(Iterable<StageEntity> stages) {
+    for (final stage in stages) {
+      final n = stage.name.toLowerCase().trim();
+      if (n == 'proposal' || n == 'proposition') return stage.id;
+    }
+    for (final stage in stages) {
+      if (isProposalStage(stage.name)) return stage.id;
     }
     return null;
   }

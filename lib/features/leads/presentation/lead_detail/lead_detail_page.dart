@@ -27,6 +27,7 @@ import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
 import 'package:odoocrm/features/call_log/presentation/widgets/call_log_dialogs.dart';
 import 'package:odoocrm/features/call_log/presentation/widgets/last_call_card.dart';
+import 'package:odoocrm/features/quotations/presentation/providers/quotation_notifier.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -72,6 +73,7 @@ class LeadDetailPage extends HookConsumerWidget {
     final stagesAsync = ref.watch(stageNotifierProvider);
     ref.watch(leadCallLogProvider(leadId));
     final isActing = useState(false);
+    final isCreatingQuotation = useState(false);
     final tab = useState(_DetailTab.info);
     final pendingDial = useState<_PendingDial?>(null);
     final isLoggingCall = useState(false);
@@ -213,6 +215,43 @@ class LeadDetailPage extends HookConsumerWidget {
         return;
       }
       await showMessage(won ? 'Marked as Won' : 'Marked as Lost');
+    }
+
+    Future<void> createQuotation() async {
+      if (isActing.value || isCreatingQuotation.value) return;
+
+      isActing.value = true;
+      isCreatingQuotation.value = true;
+      try {
+        final error = await ref
+            .read(quotationNotifierProvider(leadId).notifier)
+            .createQuotation();
+
+        if (error != null) {
+          await showMessage(error);
+          return;
+        }
+
+        // Ensure stage refresh is visible on this screen.
+        await ref.read(leadDetailNotifierProvider(leadId).future);
+        ref.invalidate(leadNotifierProvider);
+
+        final result = ref.read(quotationNotifierProvider(leadId)).valueOrNull;
+        if (result?.alreadyExisted == true) {
+          final number = result?.quotationNumber;
+          await showMessage(
+            number == null || number.isEmpty
+                ? 'Quotation already exists.'
+                : 'Quotation already exists ($number).',
+          );
+          return;
+        }
+
+        await showMessage('Quotation created successfully.');
+      } finally {
+        isCreatingQuotation.value = false;
+        isActing.value = false;
+      }
     }
 
     Future<void> openStageSheet(LeadDetailEntity lead) async {
@@ -471,6 +510,19 @@ class LeadDetailPage extends HookConsumerWidget {
                                       ),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 8),
+                                _HeaderAction(
+                                  label: isCreatingQuotation.value
+                                      ? 'Creating…'
+                                      : 'Quotation',
+                                  icon: Icons.request_quote_outlined,
+                                  active: false,
+                                  loading: isCreatingQuotation.value,
+                                  onTap: isActing.value ||
+                                          isCreatingQuotation.value
+                                      ? null
+                                      : createQuotation,
                                 ),
                                 const SizedBox(height: 14),
                                 InkWell(
@@ -778,6 +830,7 @@ class _HeaderAction extends StatelessWidget {
     required this.icon,
     required this.active,
     this.danger = false,
+    this.loading = false,
     this.onTap,
   });
 
@@ -785,6 +838,7 @@ class _HeaderAction extends StatelessWidget {
   final IconData icon;
   final bool active;
   final bool danger;
+  final bool loading;
   final VoidCallback? onTap;
 
   @override
@@ -792,6 +846,7 @@ class _HeaderAction extends StatelessWidget {
     final fg = danger ? AppTheme.lostFg : AppTheme.wonFg;
     final bg = danger ? AppTheme.lostBg : AppTheme.wonBg;
     final br = danger ? AppTheme.lostBorder : AppTheme.wonBorder;
+    final color = active ? fg : Colors.white;
 
     return InkWell(
       onTap: onTap,
@@ -809,18 +864,28 @@ class _HeaderAction extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: 14,
-              color: active ? fg : Colors.white,
-            ),
+            if (loading)
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: color,
+                ),
+              )
+            else
+              Icon(
+                icon,
+                size: 14,
+                color: color,
+              ),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: active ? fg : Colors.white,
+                color: color,
               ),
             ),
           ],

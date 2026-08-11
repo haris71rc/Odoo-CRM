@@ -31,6 +31,24 @@ abstract class JsonRpcRequest with _$JsonRpcRequest {
     );
   }
 
+  /// Matches Odoo web button RPC: `POST /web/dataset/call_button/<model>/<method>`.
+  factory JsonRpcRequest.callButton({
+    required String model,
+    required String method,
+    List<dynamic> args = const [],
+    Map<String, dynamic> kwargs = const {},
+  }) {
+    return JsonRpcRequest(
+      id: DateTime.now().millisecondsSinceEpoch % 100000,
+      params: {
+        'args': args,
+        'kwargs': kwargs,
+        'method': method,
+        'model': model,
+      },
+    );
+  }
+
   factory JsonRpcRequest.authenticate({
     required String db,
     required String login,

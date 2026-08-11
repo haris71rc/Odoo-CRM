@@ -9,6 +9,10 @@ class AppConstants {
   static const String mailMessagePostPath = '/mail/message/post';
   static const String mailThreadMessagesPath = '/mail/thread/messages';
 
+  /// Odoo web button action endpoint, e.g. crm.lead/action_sale_quotations_new.
+  static String callButtonPath(String model, String method) =>
+      '/web/dataset/call_button/$model/$method';
+
   static const String sessionIdKey = 'session_id';
   static const String uidKey = 'uid';
   static const String userLoginKey = 'user_login';
