@@ -364,6 +364,7 @@ class _FilterChipsRow extends ConsumerWidget {
       ('untouched', 'Untouched', filter.untouched),
       // ('priority', 'High priority', filter.priorityOnly),
       ('open', 'Open', filter.openOnly),
+      ('paid', 'Paid', filter.paid),
     ];
 
     return SingleChildScrollView(

@@ -12,6 +12,7 @@ import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:odoocrm/features/tags/domain/entities/lead_temperature_tag.dart';
 import 'package:odoocrm/features/tags/presentation/providers/tag_providers.dart';
+import 'package:odoocrm/features/users/presentation/providers/users_notifier.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'lead_notifier.g.dart';
@@ -36,6 +37,7 @@ typedef LeadServerFilterKey = ({
   bool untouched,
   bool priorityOnly,
   bool openOnly,
+  bool paid,
   List<LeadTemperatureTag> temperatureTags,
 });
 
@@ -55,6 +57,7 @@ class LeadFilterState {
     this.untouched = false,
     this.priorityOnly = false,
     this.openOnly = false,
+    this.paid = false,
     this.temperatureTags = const {},
   });
 
@@ -72,6 +75,9 @@ class LeadFilterState {
   final bool priorityOnly;
   final bool openOnly;
 
+  /// When true, hides Paid leads (Won/Lost assigned to Administrator).
+  final bool paid;
+
   /// Selected HOT_LEAD / WARM_LEAD filters (multi-select).
   final Set<LeadTemperatureTag> temperatureTags;
 
@@ -83,6 +89,7 @@ class LeadFilterState {
     if (untouched) count++;
     // if (priorityOnly) count++;
     if (openOnly) count++;
+    if (paid) count++;
     if (dateFilter != null) count++;
     if (assignedUserId != null) count++;
     if (stageId != null) count++;
@@ -98,6 +105,7 @@ class LeadFilterState {
         untouched ||
         // priorityOnly ||
         openOnly ||
+        paid ||
         temperatureTags.isNotEmpty;
   }
 
@@ -114,6 +122,7 @@ class LeadFilterState {
       untouched: untouched,
       priorityOnly: false, // disabled
       openOnly: openOnly,
+      paid: paid,
       temperatureTags: tags,
     );
   }
@@ -143,6 +152,7 @@ class LeadFilterState {
     bool? untouched,
     bool? priorityOnly,
     bool? openOnly,
+    bool? paid,
     Set<LeadTemperatureTag>? temperatureTags,
     bool clearDateFilter = false,
     bool clearCustomDates = false,
@@ -169,6 +179,7 @@ class LeadFilterState {
       untouched: untouched ?? this.untouched,
       priorityOnly: priorityOnly ?? this.priorityOnly,
       openOnly: openOnly ?? this.openOnly,
+      paid: paid ?? this.paid,
       temperatureTags: clearTemperatureTags
           ? const {}
           : (temperatureTags ?? this.temperatureTags),
@@ -179,7 +190,7 @@ class LeadFilterState {
 @Riverpod(keepAlive: true)
 class LeadFilterNotifier extends _$LeadFilterNotifier {
   @override
-  LeadFilterState build() => const LeadFilterState();
+  LeadFilterState build() => const LeadFilterState(paid: true);
 
   void setSearch(String value) {
     state = state.copyWith(searchQuery: value);
@@ -217,6 +228,8 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
       //   state = state.copyWith(priorityOnly: !state.priorityOnly);
       case 'open':
         state = state.copyWith(openOnly: !state.openOnly);
+      case 'paid':
+        state = state.copyWith(paid: !state.paid);
       case 'hot':
         _toggleTemperatureTag(LeadTemperatureTag.hot);
       case 'warm':
@@ -240,6 +253,7 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
       untouched: false,
       priorityOnly: false,
       openOnly: false,
+      paid: false,
       clearDateFilter: true,
       clearCustomDates: true,
       clearAssignedUser: true,
@@ -276,6 +290,7 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
     bool? untouched,
     bool? priorityOnly,
     bool? openOnly,
+    bool? paid,
     Set<LeadTemperatureTag>? temperatureTags,
   }) {
     var nextTodayMine = todayMine ?? state.todayMine;
@@ -326,6 +341,7 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
       untouched: nextUntouched,
       priorityOnly: priorityOnly ?? state.priorityOnly,
       openOnly: openOnly ?? state.openOnly,
+      paid: paid ?? state.paid,
       temperatureTags: temperatureTags ?? state.temperatureTags,
     );
   }
@@ -398,6 +414,21 @@ class LeadNotifier extends _$LeadNotifier {
       }
     }
 
+    int? excludePaidAdminId;
+    List<int> excludePaidStageIds = const [];
+    if (serverKey.paid) {
+      final users = await ref.watch(usersNotifierProvider.future);
+      final adminId = LeadListFilters.findAdministratorUserId(users);
+      if (adminId != null) {
+        final stages = await ref.watch(stageNotifierProvider.future);
+        final stageIds = LeadListFilters.findWonOrLostStageIds(stages);
+        if (stageIds.isNotEmpty) {
+          excludePaidAdminId = adminId;
+          excludePaidStageIds = stageIds;
+        }
+      }
+    }
+
     List<int> tagIds = const [];
     if (serverKey.temperatureTags.isNotEmpty) {
       try {
@@ -421,6 +452,8 @@ class LeadNotifier extends _$LeadNotifier {
       priorityOnly: false,
       openOnly: serverKey.openOnly,
       excludeStageIds: excludeStageIds,
+      excludePaidAdminId: excludePaidAdminId,
+      excludePaidStageIds: excludePaidStageIds,
       tagIds: tagIds,
     );
 

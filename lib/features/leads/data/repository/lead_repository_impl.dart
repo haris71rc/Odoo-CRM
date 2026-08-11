@@ -29,6 +29,8 @@ class LeadRepositoryImpl implements LeadRepository {
     bool priorityOnly = false,
     bool openOnly = false,
     List<int> excludeStageIds = const [],
+    int? excludePaidAdminId,
+    List<int> excludePaidStageIds = const [],
     List<int> tagIds = const [],
   }) async {
     try {
@@ -40,6 +42,8 @@ class LeadRepositoryImpl implements LeadRepository {
         priorityOnly: priorityOnly,
         openOnly: openOnly,
         excludeStageIds: excludeStageIds,
+        excludePaidAdminId: excludePaidAdminId,
+        excludePaidStageIds: excludePaidStageIds,
         tagIds: tagIds,
       );
       return Success(_leadMapper.toEntityList(dtos));

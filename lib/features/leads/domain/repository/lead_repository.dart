@@ -11,6 +11,8 @@ abstract class LeadRepository {
     bool priorityOnly = false,
     bool openOnly = false,
     List<int> excludeStageIds = const [],
+    int? excludePaidAdminId,
+    List<int> excludePaidStageIds = const [],
     List<int> tagIds = const [],
   });
 

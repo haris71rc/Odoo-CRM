@@ -56,6 +56,8 @@ class LeadRemoteDatasource {
     bool priorityOnly = false,
     bool openOnly = false,
     List<int> excludeStageIds = const [],
+    int? excludePaidAdminId,
+    List<int> excludePaidStageIds = const [],
     List<int> tagIds = const [],
   }) async {
     final extra = <List<dynamic>>[];
@@ -103,7 +105,17 @@ class LeadRemoteDatasource {
       extra.add(['tag_ids', 'in', tagIds]);
     }
 
-    final domain = AppEnvironment.mergeDomain(extra);
+    // Exclude Paid: Won/Lost assigned to Administrator.
+    // Odoo polish: NOT (user_id = admin AND stage_id in won/lost).
+    final domain = <dynamic>[
+      ...AppEnvironment.mergeDomain(extra),
+      if (excludePaidAdminId != null && excludePaidStageIds.isNotEmpty) ...[
+        '!',
+        '&',
+        ['user_id', '=', excludePaidAdminId],
+        ['stage_id', 'in', excludePaidStageIds],
+      ],
+    ];
     // ignore: avoid_print
     print('[LeadRemoteDatasource] crm.lead search_read domain: $domain');
 

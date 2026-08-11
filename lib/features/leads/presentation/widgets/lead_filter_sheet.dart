@@ -42,6 +42,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
   late bool _untouched;
   // late bool _priorityOnly; // temporarily disabled
   late bool _openOnly;
+  late bool _paid;
   late Set<LeadTemperatureTag> _temperatureTags;
 
   final _dateFormat = DateFormat('dd/MM');
@@ -61,6 +62,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
     _untouched = current.untouched;
     // _priorityOnly = current.priorityOnly;
     _openOnly = current.openOnly;
+    _paid = current.paid;
     _temperatureTags = Set<LeadTemperatureTag>.from(current.temperatureTags);
   }
 
@@ -154,6 +156,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
           untouched: _untouched,
           priorityOnly: false, // disabled: was _priorityOnly
           openOnly: _openOnly,
+          paid: _paid,
           temperatureTags: _temperatureTags,
         );
     Navigator.of(context).pop();
@@ -213,6 +216,13 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
         'Excludes Won and Lost',
         _openOnly,
         () => setState(() => _openOnly = !_openOnly),
+      ),
+      (
+        'paid',
+        'Paid',
+        'Hide Won/Lost assigned to Administrator',
+        _paid,
+        () => setState(() => _paid = !_paid),
       ),
     ];
 

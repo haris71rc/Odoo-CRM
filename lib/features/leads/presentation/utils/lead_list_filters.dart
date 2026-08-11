@@ -1,6 +1,7 @@
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
+import 'package:odoocrm/features/users/domain/entities/user_entity.dart';
 
 /// Shared local filter helpers for the leads list and pipeline tab counts.
 class LeadListFilters {
@@ -14,6 +15,38 @@ class LeadListFilters {
   static bool isLost(String? name) {
     final n = name?.toLowerCase() ?? '';
     return n == 'lost' || n.contains('closed lost') || n.endsWith(' lost');
+  }
+
+  /// Paid exclusion: assignee is the Odoo Administrator user.
+  static bool isAdministratorUser(UserEntity user) {
+    final name = user.name.toLowerCase().trim();
+    final login = (user.login ?? '').toLowerCase().trim();
+    return name == 'administrator' ||
+        name.contains('administrator') ||
+        login == 'admin' ||
+        login == 'administrator';
+  }
+
+  static int? findAdministratorUserId(Iterable<UserEntity> users) {
+    for (final user in users) {
+      final name = user.name.toLowerCase().trim();
+      if (name == 'administrator') return user.id;
+    }
+    for (final user in users) {
+      if (isAdministratorUser(user)) return user.id;
+    }
+    return null;
+  }
+
+  /// Won + Lost stage ids used when excluding Paid leads.
+  static List<int> findWonOrLostStageIds(Iterable<StageEntity> stages) {
+    return stages
+        .where(
+          (s) =>
+              s.isWon == true || isWon(s.name) || isLost(s.name),
+        )
+        .map((s) => s.id)
+        .toList();
   }
 
   static bool isFollowUp(String? name) {
