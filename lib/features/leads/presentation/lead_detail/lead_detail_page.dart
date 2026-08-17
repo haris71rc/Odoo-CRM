@@ -83,44 +83,6 @@ class LeadDetailPage extends HookConsumerWidget {
     final pendingDial = useState<_PendingDial?>(null);
     final isLoggingCall = useState(false);
 
-    useEffect(() {
-      final recordingService = ref.read(callRecordingServiceProvider);
-      if (!recordingService.isSupported) return null;
-
-      recordingService.setListener((result) {
-        if (!context.mounted) return;
-        if (result.success && result.name != null) {
-          ref
-              .read(callTranscriptionNotifierProvider(leadId).notifier)
-              .onRecordingFound(result);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Found recording: ${result.name}')),
-          );
-          return;
-        }
-        if (result.code == 'RECORDING_NOT_FOUND') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Call ended, but recording was not found.'),
-            ),
-          );
-          return;
-        }
-        if (result.code == 'MEDIA_PERMISSION_DENIED') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                result.message ??
-                    'Audio access permission is required to detect call recordings.',
-              ),
-            ),
-          );
-        }
-      });
-
-      return () => recordingService.setListener(null);
-    }, [leadId]);
-
     Future<void> showMessage(String message) async {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

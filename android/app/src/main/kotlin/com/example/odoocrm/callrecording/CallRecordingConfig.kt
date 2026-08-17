@@ -31,4 +31,11 @@ object CallRecordingConfig {
     }
 
     const val REQUEST_CALL_RECORDING = 9922
+    const val REQUEST_IMPORT_RECORDING = 9923
+
+    /** Keep pending call context so the user can import/share a recording. */
+    const val PENDING_IMPORT_TTL_MS = 30 * 60_000L
+
+    /** Temporary copies of share-sheet recordings. */
+    const val IMPORT_CACHE_TTL_MS = 60 * 60_000L
 }

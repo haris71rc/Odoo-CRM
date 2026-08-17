@@ -2,7 +2,9 @@ package com.bigoh.odoocrm.callrecording
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -11,6 +13,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.bigoh.odoocrm.callrecording.transcription.CallRecordingTranscriber
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 import java.util.ArrayDeque
 import java.util.concurrent.Executors
 
@@ -22,14 +25,16 @@ import java.util.concurrent.Executors
  * - stopCallTracking
  * - transcribeRecording { leadId, uri, name, mimeType, languageTag? }
  * - cancelTranscription
+ * - importCallRecording
+ * - cancelPendingImport
  *
  * Callbacks (Native → Flutter via same channel):
  * - onCallTrackingStarted
  * - onCallEnded
  * - onSearchingMediaStore { attempt }
  * - onRecordingCandidates { candidates }
- * - onRecordingFound { success, leadId, uri, name, ... }
- * - onRecordingError { code, message }
+ * - onRecordingFound { success, leadId, uri, name, source, ... }
+ * - onRecordingError { code, message, leadId }
  * - onTranscriptionStatus { leadId, status }
  * - onPartialTranscript { leadId, text }
  * - onFinalTranscript { leadId, text }
@@ -52,6 +57,8 @@ class CallRecordingChannelHandler(
     private var pendingCall: PendingCall? = null
     private var callStateMonitor: CallStateMonitor? = null
     private val recordingFinder = MediaStoreRecordingFinder(activity)
+    private val importResolver = ImportedRecordingResolver(activity)
+    private var cachedImportFile: File? = null
     private val transcriber = CallRecordingTranscriber(
         activity,
         object : CallRecordingTranscriber.Callbacks {
@@ -80,6 +87,7 @@ class CallRecordingChannelHandler(
             }
 
             override fun onComplete(leadId: Long, transcript: String) {
+                cleanupCachedImport(keepForRetry = false)
                 invokeFlutter("onTranscriptionComplete", mapOf(
                     "event" to "transcription_complete",
                     "leadId" to leadId,
@@ -89,6 +97,7 @@ class CallRecordingChannelHandler(
             }
 
             override fun onError(leadId: Long, code: String, message: String) {
+                cleanupCachedImport(keepForRetry = true)
                 invokeFlutter("onTranscriptionError", mapOf(
                     "event" to "transcription_error",
                     "leadId" to leadId,
@@ -115,6 +124,11 @@ class CallRecordingChannelHandler(
                 result.success(true)
             }
             "transcribeRecording" -> transcribeRecording(arguments, result)
+            "importCallRecording" -> importCallRecording(result)
+            "cancelPendingImport" -> {
+                stopTracking(clearPending = true)
+                result.success(true)
+            }
             "cancelTranscription" -> {
                 transcriber.cancel()
                 pendingTranscribeRequest = null
@@ -313,11 +327,12 @@ class CallRecordingChannelHandler(
                     }
                 } catch (e: SecurityException) {
                     mainHandler.post {
+                        pendingCall?.awaitingImport = true
                         notifyError(
                             code = "MEDIA_PERMISSION_DENIED",
                             message = "Audio access permission is required to detect call recordings.",
+                            leadId = call.leadId,
                         )
-                        clearPendingCall(call.leadId)
                     }
                 } catch (e: Exception) {
                     mainHandler.post {
@@ -344,10 +359,7 @@ class CallRecordingChannelHandler(
 
         val selected = searchResult.selected
         if (selected != null) {
-            val payload = selected.toResultMap(call.leadId)
-            Log.i(CallRecordingConfig.TAG, "Found recording: ${selected.name}")
-            invokeFlutter("onRecordingFound", payload)
-            clearPendingCall(call.leadId)
+            processRecording(call.leadId, selected)
             return
         }
 
@@ -366,15 +378,15 @@ class CallRecordingChannelHandler(
 
     /** Called when the app returns to foreground — Realme often indexes recordings then. */
     fun onActivityResumed() {
+        expirePendingCallIfNeeded()
         retryDroppedPermissionRequest()
         retryPendingTranscription()
 
         val call = resumeRetryCall ?: return
         if (!resumeRetryScheduled) return
-        if (System.currentTimeMillis() - resumeRetryEndedAt > 5 * 60_000L) {
+        if (call.isExpired()) {
             resumeRetryCall = null
             resumeRetryScheduled = false
-            clearPendingCall(call.leadId)
             return
         }
 
@@ -398,18 +410,18 @@ class CallRecordingChannelHandler(
                     }
                 } catch (e: SecurityException) {
                     mainHandler.post {
+                        pendingCall?.awaitingImport = true
                         notifyError(
                             code = "MEDIA_PERMISSION_DENIED",
                             message = "Audio access permission is required to detect call recordings.",
                             leadId = call.leadId,
                         )
-                        clearPendingCall(call.leadId)
                         resumeRetryCall = null
                     }
                 } catch (e: Exception) {
                     mainHandler.post {
                         Log.e(CallRecordingConfig.TAG, "Resume MediaStore search failed", e)
-                        clearPendingCall(call.leadId)
+                        pendingCall?.awaitingImport = true
                         resumeRetryCall = null
                     }
                 }
@@ -457,20 +469,24 @@ class CallRecordingChannelHandler(
 
         val selected = searchResult.selected
         if (selected != null) {
-            val payload = selected.toResultMap(call.leadId)
-            Log.i(CallRecordingConfig.TAG, "Found recording on resume: ${selected.name}")
-            invokeFlutter("onRecordingFound", payload)
+            processRecording(call.leadId, selected)
+        } else {
+            pendingCall?.awaitingImport = true
+            Log.i(
+                CallRecordingConfig.TAG,
+                "Resume search found nothing — keeping pending call for import leadId=${call.leadId}",
+            )
         }
 
-        clearPendingCall(call.leadId)
         resumeRetryCall = null
     }
 
     private fun notifyRecordingNotFound(leadId: Long) {
+        pendingCall?.awaitingImport = true
         Log.w(CallRecordingConfig.TAG, "No recording found for leadId=$leadId")
         notifyError(
             code = "RECORDING_NOT_FOUND",
-            message = "No call recording was found after the call ended.",
+            message = "We couldn't automatically find the call recording. Please import it manually.",
             leadId = leadId,
         )
     }
@@ -481,8 +497,244 @@ class CallRecordingChannelHandler(
             "message" to message,
             "success" to false,
         )
-        if (leadId != null) payload["leadId"] = leadId
+        payload["leadId"] = leadId ?: pendingCall?.leadId ?: 0L
         invokeFlutter("onRecordingError", payload)
+    }
+
+    /**
+     * Single entry for MediaStore, document picker, and share-sheet recordings.
+     * Flutter then starts the existing ML Kit pipeline via transcribeRecording.
+     */
+    private fun processRecording(leadId: Long, candidate: RecordingCandidate) {
+        val payload = candidate.toResultMap(leadId).toMutableMap()
+        if (candidate.source != "import" && candidate.source != "share") {
+            payload["source"] = "mediastore"
+        }
+        Log.i(
+            CallRecordingConfig.TAG,
+            "Processing recording source=${payload["source"]} name=${candidate.name} leadId=$leadId",
+        )
+        invokeFlutter("onRecordingFound", payload)
+        clearPendingCall(leadId)
+        resumeRetryCall = null
+        resumeRetryScheduled = false
+    }
+
+    private fun importCallRecording(result: MethodChannel.Result) {
+        expirePendingCallIfNeeded()
+        val call = pendingCall
+        if (call == null || call.isExpired()) {
+            notifyError(
+                code = "NO_PENDING_LEAD",
+                message = "Please start the call from a lead before importing a recording.",
+            )
+            result.success(false)
+            return
+        }
+
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "audio/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            activity.startActivityForResult(intent, CallRecordingConfig.REQUEST_IMPORT_RECORDING)
+            Log.i(CallRecordingConfig.TAG, "Opened document picker for leadId=${call.leadId}")
+            result.success(true)
+        } catch (e: Exception) {
+            Log.e(CallRecordingConfig.TAG, "Failed to open document picker", e)
+            notifyError(
+                code = "URI_ACCESS_ERROR",
+                message = "Unable to access the selected recording.",
+                leadId = call.leadId,
+            )
+            result.success(false)
+        }
+    }
+
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != CallRecordingConfig.REQUEST_IMPORT_RECORDING) return
+
+        expirePendingCallIfNeeded()
+        val call = pendingCall
+        if (resultCode != Activity.RESULT_OK) {
+            Log.i(CallRecordingConfig.TAG, "Import picker cancelled")
+            notifyError(
+                code = "IMPORT_CANCELLED",
+                message = "Import cancelled.",
+                leadId = call?.leadId,
+            )
+            return
+        }
+
+        val uri = data?.data
+        if (uri == null) {
+            notifyError(
+                code = "URI_ACCESS_ERROR",
+                message = "Unable to access the selected recording.",
+                leadId = call?.leadId,
+            )
+            return
+        }
+
+        if (call == null || call.isExpired()) {
+            notifyError(
+                code = "NO_PENDING_LEAD",
+                message = "Please start the call from a lead before importing a recording.",
+            )
+            return
+        }
+
+        resolveAndProcess(uri, source = "import", intent = data, leadId = call.leadId)
+    }
+
+    fun handleIncomingShare(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action ?: return
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+
+        expirePendingCallIfNeeded()
+
+        if (action == Intent.ACTION_SEND_MULTIPLE) {
+            val uris = shareUris(intent)
+            if (uris.size > 1) {
+                notifyError(
+                    code = "MULTIPLE_FILES_SELECTED",
+                    message = "Please share one call recording at a time.",
+                    leadId = pendingCall?.leadId,
+                )
+                return
+            }
+            if (uris.isEmpty()) {
+                notifyError(
+                    code = "URI_ACCESS_ERROR",
+                    message = "Unable to access the selected recording.",
+                    leadId = pendingCall?.leadId,
+                )
+                return
+            }
+            handleSharedUri(uris.first(), intent)
+            return
+        }
+
+        val uri = shareUri(intent)
+        if (uri == null) {
+            notifyError(
+                code = "URI_ACCESS_ERROR",
+                message = "Unable to access the selected recording.",
+                leadId = pendingCall?.leadId,
+            )
+            return
+        }
+        handleSharedUri(uri, intent)
+    }
+
+    private fun handleSharedUri(uri: Uri, intent: Intent) {
+        val call = pendingCall
+        if (call == null || call.isExpired()) {
+            notifyError(
+                code = "NO_PENDING_LEAD",
+                message = "Please open a lead and start the call from the CRM before importing a recording.",
+            )
+            return
+        }
+        resolveAndProcess(uri, source = "share", intent = intent, leadId = call.leadId)
+    }
+
+    private fun resolveAndProcess(uri: Uri, source: String, intent: Intent?, leadId: Long) {
+        ioExecutor.execute {
+            try {
+                importResolver.cleanupExpiredCache()
+                val resolved = importResolver.resolve(uri, source, intent)
+                mainHandler.post {
+                    cachedImportFile?.let { previous ->
+                        if (previous != resolved.cachedFile) {
+                            importResolver.deleteCacheFile(previous)
+                        }
+                    }
+                    cachedImportFile = resolved.cachedFile
+                    processRecording(leadId, resolved.candidate)
+                }
+            } catch (e: InvalidAudioException) {
+                mainHandler.post {
+                    notifyError(
+                        code = "INVALID_AUDIO",
+                        message = e.message
+                            ?: "The selected file is not a valid audio recording.",
+                        leadId = leadId,
+                    )
+                }
+            } catch (e: UriAccessException) {
+                mainHandler.post {
+                    notifyError(
+                        code = "URI_ACCESS_ERROR",
+                        message = e.message ?: "Unable to access the selected recording.",
+                        leadId = leadId,
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(CallRecordingConfig.TAG, "Failed to import recording", e)
+                mainHandler.post {
+                    notifyError(
+                        code = "URI_ACCESS_ERROR",
+                        message = "Unable to access the selected recording.",
+                        leadId = leadId,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun shareUri(intent: Intent): Uri? {
+        extraShareUri(intent)?.let { return it }
+        intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri?.let { return it }
+        return intent.data
+    }
+
+    private fun shareUris(intent: Intent): List<Uri> {
+        extraShareUris(intent).takeIf { it.isNotEmpty() }?.let { return it }
+        val clip = intent.clipData ?: return emptyList()
+        return buildList {
+            for (i in 0 until clip.itemCount) {
+                clip.getItemAt(i).uri?.let { add(it) }
+            }
+        }
+    }
+
+    private fun extraShareUri(intent: Intent): Uri? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
+    }
+
+    private fun extraShareUris(intent: Intent): List<Uri> {
+        val list = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+        }
+        return list?.filterNotNull().orEmpty()
+    }
+
+    private fun expirePendingCallIfNeeded() {
+        val call = pendingCall ?: return
+        if (!call.isExpired()) return
+        Log.i(CallRecordingConfig.TAG, "Pending call expired for leadId=${call.leadId}")
+        clearPendingCall(call.leadId)
+        resumeRetryCall = null
+        resumeRetryScheduled = false
+    }
+
+    private fun cleanupCachedImport(keepForRetry: Boolean) {
+        if (keepForRetry) return
+        importResolver.deleteCacheFile(cachedImportFile)
+        cachedImportFile = null
+        importResolver.cleanupExpiredCache()
     }
 
     private fun notifyTranscriptionPermissionDenied(leadId: Long) {
@@ -523,6 +775,7 @@ class CallRecordingChannelHandler(
             permissions = listOf(requiredAudioPermission()),
             onAllGranted = onGranted,
             onDenied = {
+                pendingCall?.awaitingImport = true
                 notifyError(
                     code = "MEDIA_PERMISSION_DENIED",
                     message = "Audio access permission is required to detect call recordings.",
@@ -634,6 +887,8 @@ class CallRecordingChannelHandler(
         stopCallStateMonitor()
         if (clearPending) {
             pendingCall = null
+            resumeRetryCall = null
+            resumeRetryScheduled = false
         }
     }
 
@@ -662,6 +917,7 @@ class CallRecordingChannelHandler(
     fun dispose() {
         stopTracking(clearPending = true)
         transcriber.dispose()
+        cleanupCachedImport(keepForRetry = false)
         ioExecutor.shutdown()
     }
 }

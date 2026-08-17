@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:odoocrm/core/services/call_recording_service.dart';
+import 'package:odoocrm/core/utils/html_text_utils.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_transcription_state.dart';
+import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -11,6 +13,7 @@ part 'call_transcription_notifier.g.dart';
 @riverpod
 class CallTranscriptionNotifier extends _$CallTranscriptionNotifier {
   Timer? _busyTimeout;
+  void Function()? _releaseKeepAlive;
 
   @override
   CallTranscriptionState build(int leadId) {
@@ -21,6 +24,7 @@ class CallTranscriptionNotifier extends _$CallTranscriptionNotifier {
 
     ref.onDispose(() {
       _busyTimeout?.cancel();
+      _releaseKeepAlive = null;
       if (service.isSupported) {
         service.setTranscriptionListener(null);
       }
@@ -32,8 +36,18 @@ class CallTranscriptionNotifier extends _$CallTranscriptionNotifier {
     );
   }
 
+  void _retain() {
+    _releaseKeepAlive ??= ref.keepAlive().close;
+  }
+
+  void _release() {
+    _releaseKeepAlive?.call();
+    _releaseKeepAlive = null;
+  }
+
   void onRecordingFound(CallRecordingResult recording) {
     if (recording.uri == null) return;
+    _retain();
     state = state.copyWith(
       recordingName: recording.name,
       recordingUri: recording.uri,
@@ -45,6 +59,68 @@ class CallTranscriptionNotifier extends _$CallTranscriptionNotifier {
       name: recording.name,
       mimeType: recording.mimeType,
     );
+  }
+
+  void onRecordingNotFound() {
+    _retain();
+    state = state.copyWith(
+      status: CallTranscriptionStatus.recordingNotFound,
+      errorCode: 'RECORDING_NOT_FOUND',
+      errorMessage:
+          "We couldn't automatically find the call recording. Please import it manually.",
+    );
+  }
+
+  void onImportCancelled() {
+    state = state.copyWith(
+      status: CallTranscriptionStatus.recordingNotFound,
+      errorCode: 'RECORDING_NOT_FOUND',
+      errorMessage:
+          "We couldn't automatically find the recording for this call.",
+      clearError: false,
+    );
+  }
+
+  void onRecordingError({
+    required String code,
+    String? message,
+  }) {
+    _retain();
+    if (code == 'IMPORT_CANCELLED') {
+      onImportCancelled();
+      return;
+    }
+    if (code == 'RECORDING_NOT_FOUND') {
+      onRecordingNotFound();
+      return;
+    }
+    state = state.copyWith(
+      status: CallTranscriptionStatus.error,
+      errorCode: code,
+      errorMessage: _userMessage(code, message),
+    );
+  }
+
+  Future<void> importRecording() async {
+    final service = ref.read(callRecordingServiceProvider);
+    if (!service.isSupported) return;
+
+    _retain();
+
+    state = state.copyWith(
+      status: CallTranscriptionStatus.importing,
+      clearError: true,
+    );
+
+    final started = await service.importCallRecording();
+    if (!started && state.status == CallTranscriptionStatus.importing) {
+      state = state.copyWith(
+        status: CallTranscriptionStatus.recordingNotFound,
+        errorCode: 'RECORDING_NOT_FOUND',
+        errorMessage:
+            "We couldn't automatically find the recording for this call.",
+      );
+    }
   }
 
   Future<void> startTranscription({
@@ -98,8 +174,19 @@ class CallTranscriptionNotifier extends _$CallTranscriptionNotifier {
   }
 
   Future<void> retry() async {
+    if (state.errorCode == 'ODOO_SAVE_ERROR' &&
+        state.displayTranscript.isNotEmpty) {
+      await _saveTranscriptNote(state.displayTranscript);
+      return;
+    }
+
     final uri = state.recordingUri;
-    if (uri == null || uri.isEmpty) return;
+    if (uri == null || uri.isEmpty) {
+      if (state.canImport) {
+        await importRecording();
+      }
+      return;
+    }
 
     await startTranscription(
       uri: uri,
@@ -173,27 +260,83 @@ class CallTranscriptionNotifier extends _$CallTranscriptionNotifier {
         final incoming = event.transcript?.trim() ?? '';
         final kept = incoming.isNotEmpty ? incoming : state.displayTranscript;
         state = state.copyWith(
-          status: CallTranscriptionStatus.completed,
+          status: CallTranscriptionStatus.savingNote,
           finalTranscript: kept,
           partialTranscript: '',
         );
+        unawaited(_saveTranscriptNote(kept));
       case CallTranscriptionEventType.error:
         _busyTimeout?.cancel();
         if (_isBenignCancellation(event.message)) return;
         if (_isEndOfSpeech(event.message) && state.displayTranscript.isNotEmpty) {
           state = state.copyWith(
-            status: CallTranscriptionStatus.completed,
+            status: CallTranscriptionStatus.savingNote,
             finalTranscript: state.displayTranscript,
             partialTranscript: '',
           );
+          unawaited(_saveTranscriptNote(state.displayTranscript));
           return;
         }
         state = state.copyWith(
           status: CallTranscriptionStatus.error,
           errorCode: event.code,
-          errorMessage: event.message,
+          errorMessage: _userMessage(event.code, event.message),
         );
     }
+  }
+
+  Future<void> _saveTranscriptNote(String transcript) async {
+    final trimmed = transcript.trim();
+    if (trimmed.isEmpty) {
+      _release();
+      state = state.copyWith(
+        status: CallTranscriptionStatus.completed,
+        finalTranscript: '',
+      );
+      return;
+    }
+
+    state = state.copyWith(status: CallTranscriptionStatus.savingNote);
+    final body = HtmlTextUtils.toHtml('Call transcript\n\n$trimmed');
+    final error = await ref
+        .read(chatterNotifierProvider(leadId).notifier)
+        .logNote(body);
+
+    if (error != null) {
+      state = state.copyWith(
+        status: CallTranscriptionStatus.error,
+        errorCode: 'ODOO_SAVE_ERROR',
+        errorMessage: 'Could not save the transcript to the lead. Tap Retry.',
+      );
+      return;
+    }
+
+    _release();
+    state = state.copyWith(status: CallTranscriptionStatus.completed);
+  }
+
+  String _userMessage(String? code, String? message) {
+    return switch (code) {
+      'RECORDING_NOT_FOUND' =>
+        "We couldn't automatically find the call recording. Please import it manually.",
+      'NO_PENDING_LEAD' =>
+        'Please start the call from a lead before importing a recording.',
+      'INVALID_AUDIO' => 'The selected file is not a valid audio recording.',
+      'URI_ACCESS_ERROR' => 'Unable to access the selected recording.',
+      'MULTIPLE_FILES_SELECTED' =>
+        'Please share one call recording at a time.',
+      'IMPORT_CANCELLED' =>
+        "We couldn't automatically find the recording for this call.",
+      'MEDIA_PERMISSION_DENIED' =>
+        'Audio access permission is required to detect call recordings.',
+      'AUDIO_CONVERSION_ERROR' => 'Could not convert this recording for transcription.',
+      'SPEECH_RECOGNITION_UNAVAILABLE' =>
+        'On-device speech recognition is not available on this device.',
+      'SPEECH_RECOGNITION_ERROR' =>
+        message ?? 'Speech recognition failed. Tap Retry to try again.',
+      'ODOO_SAVE_ERROR' => 'Could not save the transcript to the lead. Tap Retry.',
+      _ => message ?? 'Something went wrong. Please try again.',
+    };
   }
 
   bool _isBenignCancellation(String? message) {

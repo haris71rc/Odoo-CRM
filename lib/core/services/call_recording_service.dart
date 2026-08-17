@@ -17,6 +17,7 @@ class CallRecordingResult {
     this.dateAdded,
     this.size,
     this.relativePath,
+    this.source,
     this.code,
     this.message,
   });
@@ -30,6 +31,7 @@ class CallRecordingResult {
   final int? dateAdded;
   final int? size;
   final String? relativePath;
+  final String? source;
   final String? code;
   final String? message;
 
@@ -44,6 +46,7 @@ class CallRecordingResult {
       dateAdded: (map['dateAdded'] as num?)?.toInt(),
       size: (map['size'] as num?)?.toInt(),
       relativePath: map['relativePath'] as String?,
+      source: map['source'] as String?,
       code: map['code'] as String?,
       message: map['message'] as String?,
     );
@@ -173,6 +176,45 @@ class CallRecordingService {
       _log('cancelTranscription failed: ${e.code} ${e.message}');
     } catch (e) {
       _log('cancelTranscription failed: $e');
+    }
+  }
+
+  /// Opens the system audio document picker. Does not start picking by itself.
+  Future<bool> importCallRecording() async {
+    if (!isSupported) return false;
+
+    try {
+      final started = await _channel.invokeMethod<bool>('importCallRecording');
+      _log('Import picker launched');
+      return started ?? false;
+    } on PlatformException catch (e) {
+      _log('importCallRecording failed: ${e.code} ${e.message}');
+      _listener?.call(
+        CallRecordingResult(
+          success: false,
+          leadId: 0,
+          code: e.code,
+          message: e.message,
+        ),
+      );
+      return false;
+    } catch (e) {
+      _log('importCallRecording failed: $e');
+      return false;
+    }
+  }
+
+  /// Clears native pending-call import context.
+  Future<void> cancelPendingImport() async {
+    if (!isSupported) return;
+
+    try {
+      await _channel.invokeMethod<void>('cancelPendingImport');
+      _log('Pending import cancelled');
+    } on PlatformException catch (e) {
+      _log('cancelPendingImport failed: ${e.code} ${e.message}');
+    } catch (e) {
+      _log('cancelPendingImport failed: $e');
     }
   }
 
@@ -329,6 +371,10 @@ class CallRecordingService {
   void _logError(CallRecordingResult result) {
     if (result.code == 'RECORDING_NOT_FOUND') {
       _log('No recording found.');
+      return;
+    }
+    if (result.code == 'IMPORT_CANCELLED') {
+      _log('Import cancelled');
       return;
     }
     _log('Recording error: ${result.code} — ${result.message}');

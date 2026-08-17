@@ -25,6 +25,7 @@ data class RecordingCandidate(
         "dateAdded" to dateAddedSeconds,
         "size" to size,
         "relativePath" to (relativePath ?: ""),
+        "source" to source,
     )
 
     fun toDebugMap(): Map<String, Any?> = mapOf(

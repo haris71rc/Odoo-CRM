@@ -80,6 +80,19 @@ class MainActivity : FlutterActivity() {
                 handler.handleMethodCall(call.method, call.arguments, result)
             }
         }
+        deliverShareIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        deliverShareIntent(intent)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        callRecordingHandler?.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onDestroy() {
@@ -890,9 +903,22 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun deliverShareIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action ?: return
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+        if (intent.getBooleanExtra(EXTRA_SHARE_HANDLED, false)) return
+
+        intent.putExtra(EXTRA_SHARE_HANDLED, true)
+        mainHandler.postDelayed({
+            callRecordingHandler?.handleIncomingShare(intent)
+        }, 500L)
+    }
+
     companion object {
         private const val REQUEST_WHATSAPP = 9911
         private const val ACTION_CALL = "call"
         private const val ACTION_CHECK = "check"
+        private const val EXTRA_SHARE_HANDLED = "call_recording_share_handled"
     }
 }

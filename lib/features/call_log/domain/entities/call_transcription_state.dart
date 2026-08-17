@@ -1,9 +1,12 @@
 enum CallTranscriptionStatus {
   idle,
+  recordingNotFound,
+  importing,
   awaitingPermission,
   preparingAudio,
   convertingAudio,
   transcribing,
+  savingNote,
   completed,
   error,
 }
@@ -30,10 +33,16 @@ class CallTranscriptionState {
   final String? errorMessage;
 
   bool get isBusy =>
+      status == CallTranscriptionStatus.importing ||
       status == CallTranscriptionStatus.awaitingPermission ||
       status == CallTranscriptionStatus.preparingAudio ||
       status == CallTranscriptionStatus.convertingAudio ||
-      status == CallTranscriptionStatus.transcribing;
+      status == CallTranscriptionStatus.transcribing ||
+      status == CallTranscriptionStatus.savingNote;
+
+  bool get canImport =>
+      status == CallTranscriptionStatus.recordingNotFound ||
+      status == CallTranscriptionStatus.error;
 
   String get displayTranscript {
     final finalized = finalTranscript.trim();
@@ -50,12 +59,16 @@ class CallTranscriptionState {
 
   String get statusLabel => switch (status) {
         CallTranscriptionStatus.idle => 'Idle',
+        CallTranscriptionStatus.recordingNotFound =>
+          "We couldn't automatically find the recording for this call.",
+        CallTranscriptionStatus.importing => 'Opening recording picker...',
         CallTranscriptionStatus.awaitingPermission =>
           'Waiting for microphone permission...',
         CallTranscriptionStatus.preparingAudio => 'Preparing recording...',
         CallTranscriptionStatus.convertingAudio => 'Converting audio...',
         CallTranscriptionStatus.transcribing => 'Transcribing...',
-        CallTranscriptionStatus.completed => 'Transcription completed.',
+        CallTranscriptionStatus.savingNote => 'Saving transcript...',
+        CallTranscriptionStatus.completed => 'Call transcript saved successfully.',
         CallTranscriptionStatus.error => errorMessage ?? 'Transcription failed.',
       };
 
