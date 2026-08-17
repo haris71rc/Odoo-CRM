@@ -21,6 +21,22 @@ Flutter, Riverpod + Generator, GoRouter, Dio, Freezed, Json Serializable, Flutte
 - Base URL: `https://crmdigi.digilawyer.ai`
 - Database: `crmdigi`
 
+### Call recording (Android MVP)
+
+Supported OEMs for native dialer recording detection and on-device transcription:
+
+- Samsung
+- OnePlus
+- Realme
+
+Requirements:
+
+- Android 12+ (API 31+) for ML Kit speech recognition
+- User must press the native dialer **Record** button during the call
+- Recordings are discovered via MediaStore (not filesystem paths)
+
+Test on Realme: open a lead → Call → Record in the Realme dialer → end call → verify the **Call Recording** card shows the transcript.
+
 ### Run
 
 ```bash

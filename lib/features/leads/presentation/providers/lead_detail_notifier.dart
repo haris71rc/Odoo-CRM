@@ -1,6 +1,10 @@
+import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
+import 'package:odoocrm/features/call_log/domain/utils/connected_call_rule.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
+import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
+import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'lead_detail_notifier.g.dart';
@@ -48,6 +52,42 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     if (error != null) return false;
 
     ref.invalidate(leadNotifierProvider);
+    return true;
+  }
+
+  /// Moves the lead to Connected when an Android call actually connected
+  /// with talk time greater than 2 seconds.
+  ///
+  /// Skips later pipeline stages (Follow-Up, Proposal, Won, Lost) and does
+  /// not invalidate the call-log provider (safe to call during device sync).
+  Future<bool> autoMoveToConnected(CallLog callEvent) async {
+    if (!ConnectedCallRule.isConnectedConversation(
+      duration: callEvent.duration,
+      status: callEvent.status,
+    )) {
+      return false;
+    }
+
+    final lead = state.valueOrNull ?? await future;
+    if (!ConnectedCallRule.shouldMoveToConnected(lead.stage?.name)) {
+      return false;
+    }
+
+    final stages = await ref.read(stageNotifierProvider.future);
+    final connectedStageId = LeadListFilters.findConnectedStageId(stages);
+    if (connectedStageId == null) return false;
+    if (lead.stage?.id == connectedStageId) return false;
+
+    final repository = ref.read(leadRepositoryProvider);
+    final result = await repository.updateStage(
+      leadId: leadId,
+      stageId: connectedStageId,
+    );
+    if (result.isFailure) return false;
+
+    ref.invalidateSelf();
+    ref.invalidate(leadNotifierProvider);
+    await future;
     return true;
   }
 

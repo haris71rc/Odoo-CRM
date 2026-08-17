@@ -1,13 +1,13 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'lead_detail_notifier.dart';
+part of 'call_transcription_notifier.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$leadDetailNotifierHash() =>
-    r'4deb9c7e54c7f801079168d219bda2000983dfd9';
+String _$callTranscriptionNotifierHash() =>
+    r'8698f4539a4671c6db668632997f0fa383a351f1';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -30,30 +30,30 @@ class _SystemHash {
   }
 }
 
-abstract class _$LeadDetailNotifier
-    extends BuildlessAutoDisposeAsyncNotifier<LeadDetailEntity> {
+abstract class _$CallTranscriptionNotifier
+    extends BuildlessAutoDisposeNotifier<CallTranscriptionState> {
   late final int leadId;
 
-  FutureOr<LeadDetailEntity> build(int leadId);
+  CallTranscriptionState build(int leadId);
 }
 
-/// See also [LeadDetailNotifier].
-@ProviderFor(LeadDetailNotifier)
-const leadDetailNotifierProvider = LeadDetailNotifierFamily();
+/// See also [CallTranscriptionNotifier].
+@ProviderFor(CallTranscriptionNotifier)
+const callTranscriptionNotifierProvider = CallTranscriptionNotifierFamily();
 
-/// See also [LeadDetailNotifier].
-class LeadDetailNotifierFamily extends Family<AsyncValue<LeadDetailEntity>> {
-  /// See also [LeadDetailNotifier].
-  const LeadDetailNotifierFamily();
+/// See also [CallTranscriptionNotifier].
+class CallTranscriptionNotifierFamily extends Family<CallTranscriptionState> {
+  /// See also [CallTranscriptionNotifier].
+  const CallTranscriptionNotifierFamily();
 
-  /// See also [LeadDetailNotifier].
-  LeadDetailNotifierProvider call(int leadId) {
-    return LeadDetailNotifierProvider(leadId);
+  /// See also [CallTranscriptionNotifier].
+  CallTranscriptionNotifierProvider call(int leadId) {
+    return CallTranscriptionNotifierProvider(leadId);
   }
 
   @override
-  LeadDetailNotifierProvider getProviderOverride(
-    covariant LeadDetailNotifierProvider provider,
+  CallTranscriptionNotifierProvider getProviderOverride(
+    covariant CallTranscriptionNotifierProvider provider,
   ) {
     return call(provider.leadId);
   }
@@ -70,32 +70,32 @@ class LeadDetailNotifierFamily extends Family<AsyncValue<LeadDetailEntity>> {
       _allTransitiveDependencies;
 
   @override
-  String? get name => r'leadDetailNotifierProvider';
+  String? get name => r'callTranscriptionNotifierProvider';
 }
 
-/// See also [LeadDetailNotifier].
-class LeadDetailNotifierProvider
+/// See also [CallTranscriptionNotifier].
+class CallTranscriptionNotifierProvider
     extends
-        AutoDisposeAsyncNotifierProviderImpl<
-          LeadDetailNotifier,
-          LeadDetailEntity
+        AutoDisposeNotifierProviderImpl<
+          CallTranscriptionNotifier,
+          CallTranscriptionState
         > {
-  /// See also [LeadDetailNotifier].
-  LeadDetailNotifierProvider(int leadId)
+  /// See also [CallTranscriptionNotifier].
+  CallTranscriptionNotifierProvider(int leadId)
     : this._internal(
-        () => LeadDetailNotifier()..leadId = leadId,
-        from: leadDetailNotifierProvider,
-        name: r'leadDetailNotifierProvider',
+        () => CallTranscriptionNotifier()..leadId = leadId,
+        from: callTranscriptionNotifierProvider,
+        name: r'callTranscriptionNotifierProvider',
         debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
             ? null
-            : _$leadDetailNotifierHash,
-        dependencies: LeadDetailNotifierFamily._dependencies,
+            : _$callTranscriptionNotifierHash,
+        dependencies: CallTranscriptionNotifierFamily._dependencies,
         allTransitiveDependencies:
-            LeadDetailNotifierFamily._allTransitiveDependencies,
+            CallTranscriptionNotifierFamily._allTransitiveDependencies,
         leadId: leadId,
       );
 
-  LeadDetailNotifierProvider._internal(
+  CallTranscriptionNotifierProvider._internal(
     super._createNotifier, {
     required super.name,
     required super.dependencies,
@@ -108,17 +108,17 @@ class LeadDetailNotifierProvider
   final int leadId;
 
   @override
-  FutureOr<LeadDetailEntity> runNotifierBuild(
-    covariant LeadDetailNotifier notifier,
+  CallTranscriptionState runNotifierBuild(
+    covariant CallTranscriptionNotifier notifier,
   ) {
     return notifier.build(leadId);
   }
 
   @override
-  Override overrideWith(LeadDetailNotifier Function() create) {
+  Override overrideWith(CallTranscriptionNotifier Function() create) {
     return ProviderOverride(
       origin: this,
-      override: LeadDetailNotifierProvider._internal(
+      override: CallTranscriptionNotifierProvider._internal(
         () => create()..leadId = leadId,
         from: from,
         name: null,
@@ -131,14 +131,17 @@ class LeadDetailNotifierProvider
   }
 
   @override
-  AutoDisposeAsyncNotifierProviderElement<LeadDetailNotifier, LeadDetailEntity>
+  AutoDisposeNotifierProviderElement<
+    CallTranscriptionNotifier,
+    CallTranscriptionState
+  >
   createElement() {
-    return _LeadDetailNotifierProviderElement(this);
+    return _CallTranscriptionNotifierProviderElement(this);
   }
 
   @override
   bool operator ==(Object other) {
-    return other is LeadDetailNotifierProvider && other.leadId == leadId;
+    return other is CallTranscriptionNotifierProvider && other.leadId == leadId;
   }
 
   @override
@@ -152,23 +155,23 @@ class LeadDetailNotifierProvider
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin LeadDetailNotifierRef
-    on AutoDisposeAsyncNotifierProviderRef<LeadDetailEntity> {
+mixin CallTranscriptionNotifierRef
+    on AutoDisposeNotifierProviderRef<CallTranscriptionState> {
   /// The parameter `leadId` of this provider.
   int get leadId;
 }
 
-class _LeadDetailNotifierProviderElement
+class _CallTranscriptionNotifierProviderElement
     extends
-        AutoDisposeAsyncNotifierProviderElement<
-          LeadDetailNotifier,
-          LeadDetailEntity
+        AutoDisposeNotifierProviderElement<
+          CallTranscriptionNotifier,
+          CallTranscriptionState
         >
-    with LeadDetailNotifierRef {
-  _LeadDetailNotifierProviderElement(super.provider);
+    with CallTranscriptionNotifierRef {
+  _CallTranscriptionNotifierProviderElement(super.provider);
 
   @override
-  int get leadId => (origin as LeadDetailNotifierProvider).leadId;
+  int get leadId => (origin as CallTranscriptionNotifierProvider).leadId;
 }
 
 // ignore_for_file: type=lint

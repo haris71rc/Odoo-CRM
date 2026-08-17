@@ -24,7 +24,7 @@ final leadRepositoryProvider = Provider<LeadRepository>.internal(
 // ignore: unused_element
 typedef LeadRepositoryRef = ProviderRef<LeadRepository>;
 String _$leadFilterNotifierHash() =>
-    r'9acb7f4d84fac57a079b4dd12a5d70ba1cfe6e79';
+    r'3ade3d75db9be9ebdc172936e563fe6e65036e8a';
 
 /// See also [LeadFilterNotifier].
 @ProviderFor(LeadFilterNotifier)
@@ -40,7 +40,7 @@ final leadFilterNotifierProvider =
     );
 
 typedef _$LeadFilterNotifier = Notifier<LeadFilterState>;
-String _$leadNotifierHash() => r'3064225390590286a3f778909f1217b80f86451d';
+String _$leadNotifierHash() => r'16f7a4d35ff1750d84bfaf5f2ddc0b8b7e750123';
 
 /// See also [LeadNotifier].
 @ProviderFor(LeadNotifier)

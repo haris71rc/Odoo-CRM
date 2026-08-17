@@ -60,6 +60,31 @@ class LeadListFilters {
     return n == 'new prospect' || n == 'new prospects';
   }
 
+  /// DigiLawyer "Connected" stage. Excludes "Not connected (DNP)".
+  static bool isConnectedStage(String? name) {
+    final n = (name ?? '').toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (n.isEmpty) return false;
+    if (n.contains('not connected') || n.contains('not-connected')) {
+      return false;
+    }
+    if (n.contains('dnp') || n.contains('do not')) return false;
+    return n == 'connected' ||
+        n == 'connect' ||
+        n.contains('connected');
+  }
+
+  /// Resolves the Connected stage id from fetched stages.
+  static int? findConnectedStageId(Iterable<StageEntity> stages) {
+    for (final stage in stages) {
+      final n = stage.name.toLowerCase().trim();
+      if (n == 'connected') return stage.id;
+    }
+    for (final stage in stages) {
+      if (isConnectedStage(stage.name)) return stage.id;
+    }
+    return null;
+  }
+
   /// DigiLawyer "Proposal" and Odoo default "Proposition" stages.
   static bool isProposalStage(String? name) {
     final n = (name ?? '').toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');

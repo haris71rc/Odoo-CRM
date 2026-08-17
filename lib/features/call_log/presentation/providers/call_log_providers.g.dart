@@ -57,7 +57,7 @@ final deviceCallReaderProvider = Provider<DeviceCallReader>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef DeviceCallReaderRef = ProviderRef<DeviceCallReader>;
-String _$leadCallLogHash() => r'4269e1711c2d600bfba09e510c08f64b1d0b2842';
+String _$leadCallLogHash() => r'c3a6b2a7ae8397826e9f6cf9c9beb6cb7210020f';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -84,6 +84,8 @@ class _SystemHash {
 ///
 /// Also syncs dialer-made calls from the Android call log into Odoo so calls
 /// placed outside the CRM Call button still update Call Log / stage rules.
+/// When a new outbound call is synced, auto-assigns the lead to the logged-in
+/// user if they exist and are not already the salesperson.
 ///
 /// Copied from [leadCallLog].
 @ProviderFor(leadCallLog)
@@ -93,6 +95,8 @@ const leadCallLogProvider = LeadCallLogFamily();
 ///
 /// Also syncs dialer-made calls from the Android call log into Odoo so calls
 /// placed outside the CRM Call button still update Call Log / stage rules.
+/// When a new outbound call is synced, auto-assigns the lead to the logged-in
+/// user if they exist and are not already the salesperson.
 ///
 /// Copied from [leadCallLog].
 class LeadCallLogFamily extends Family<AsyncValue<CallLog>> {
@@ -100,6 +104,8 @@ class LeadCallLogFamily extends Family<AsyncValue<CallLog>> {
   ///
   /// Also syncs dialer-made calls from the Android call log into Odoo so calls
   /// placed outside the CRM Call button still update Call Log / stage rules.
+  /// When a new outbound call is synced, auto-assigns the lead to the logged-in
+  /// user if they exist and are not already the salesperson.
   ///
   /// Copied from [leadCallLog].
   const LeadCallLogFamily();
@@ -108,6 +114,8 @@ class LeadCallLogFamily extends Family<AsyncValue<CallLog>> {
   ///
   /// Also syncs dialer-made calls from the Android call log into Odoo so calls
   /// placed outside the CRM Call button still update Call Log / stage rules.
+  /// When a new outbound call is synced, auto-assigns the lead to the logged-in
+  /// user if they exist and are not already the salesperson.
   ///
   /// Copied from [leadCallLog].
   LeadCallLogProvider call(int leadId) {
@@ -140,6 +148,8 @@ class LeadCallLogFamily extends Family<AsyncValue<CallLog>> {
 ///
 /// Also syncs dialer-made calls from the Android call log into Odoo so calls
 /// placed outside the CRM Call button still update Call Log / stage rules.
+/// When a new outbound call is synced, auto-assigns the lead to the logged-in
+/// user if they exist and are not already the salesperson.
 ///
 /// Copied from [leadCallLog].
 class LeadCallLogProvider extends AutoDisposeFutureProvider<CallLog> {
@@ -147,6 +157,8 @@ class LeadCallLogProvider extends AutoDisposeFutureProvider<CallLog> {
   ///
   /// Also syncs dialer-made calls from the Android call log into Odoo so calls
   /// placed outside the CRM Call button still update Call Log / stage rules.
+  /// When a new outbound call is synced, auto-assigns the lead to the logged-in
+  /// user if they exist and are not already the salesperson.
   ///
   /// Copied from [leadCallLog].
   LeadCallLogProvider(int leadId)

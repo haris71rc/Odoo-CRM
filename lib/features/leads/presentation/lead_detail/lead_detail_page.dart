@@ -20,12 +20,16 @@ import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/internal_note_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
+import 'package:odoocrm/features/leads/presentation/widgets/assign_lead_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_actions_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_fab.dart';
+import 'package:odoocrm/core/services/call_recording_service.dart';
 import 'package:odoocrm/core/services/whatsapp_service.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
+import 'package:odoocrm/features/call_log/presentation/providers/call_transcription_notifier.dart';
 import 'package:odoocrm/features/call_log/presentation/widgets/call_log_dialogs.dart';
+import 'package:odoocrm/features/call_log/presentation/widgets/call_transcription_card.dart';
 import 'package:odoocrm/features/call_log/presentation/widgets/last_call_card.dart';
 import 'package:odoocrm/features/quotations/presentation/providers/quotation_notifier.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
@@ -72,11 +76,50 @@ class LeadDetailPage extends HookConsumerWidget {
     final currentUser = ref.watch(authNotifierProvider).valueOrNull;
     final stagesAsync = ref.watch(stageNotifierProvider);
     ref.watch(leadCallLogProvider(leadId));
+    ref.watch(callTranscriptionNotifierProvider(leadId));
     final isActing = useState(false);
     final isCreatingQuotation = useState(false);
     final tab = useState(_DetailTab.info);
     final pendingDial = useState<_PendingDial?>(null);
     final isLoggingCall = useState(false);
+
+    useEffect(() {
+      final recordingService = ref.read(callRecordingServiceProvider);
+      if (!recordingService.isSupported) return null;
+
+      recordingService.setListener((result) {
+        if (!context.mounted) return;
+        if (result.success && result.name != null) {
+          ref
+              .read(callTranscriptionNotifierProvider(leadId).notifier)
+              .onRecordingFound(result);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Found recording: ${result.name}')),
+          );
+          return;
+        }
+        if (result.code == 'RECORDING_NOT_FOUND') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Call ended, but recording was not found.'),
+            ),
+          );
+          return;
+        }
+        if (result.code == 'MEDIA_PERMISSION_DENIED') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result.message ??
+                    'Audio access permission is required to detect call recordings.',
+              ),
+            ),
+          );
+        }
+      });
+
+      return () => recordingService.setListener(null);
+    }, [leadId]);
 
     Future<void> showMessage(String message) async {
       if (!context.mounted) return;
@@ -90,7 +133,10 @@ class LeadDetailPage extends HookConsumerWidget {
       await showCallValidationDialog(context, message);
     }
 
-    Future<void> persistCallLog(CallLog callEvent) async {
+    Future<void> persistCallLog(
+      CallLog callEvent, {
+      bool fromAndroidDevice = false,
+    }) async {
       isLoggingCall.value = true;
 
       final lead = leadAsync.valueOrNull;
@@ -112,6 +158,17 @@ class LeadDetailPage extends HookConsumerWidget {
           .read(leadDetailNotifierProvider(leadId).notifier)
           .autoAssignCaller(currentUser?.id);
 
+      var movedToConnected = false;
+      if (fromAndroidDevice) {
+        movedToConnected = await ref
+            .read(leadDetailNotifierProvider(leadId).notifier)
+            .autoMoveToConnected(callEvent);
+      }
+
+      if (movedToConnected) {
+        await showMessage('Call connected — stage set to Connected');
+        return;
+      }
       await showMessage(
         assigned ? 'Call saved and assigned to you' : 'Call saved to lead',
       );
@@ -136,7 +193,10 @@ class LeadDetailPage extends HookConsumerWidget {
 
       if (callLog != null) {
         // Device call log found — save directly using actual duration.
-        await persistCallLog(callLog);
+        await persistCallLog(
+          callLog,
+          fromAndroidDevice: reader.isSupported,
+        );
         return;
       }
 
@@ -172,6 +232,17 @@ class LeadDetailPage extends HookConsumerWidget {
 
       final dialedAt = DateTime.now();
       pendingDial.value = _PendingDial(phone: number, dialedAt: dialedAt);
+
+      final recordingService = ref.read(callRecordingServiceProvider);
+      if (recordingService.isSupported) {
+        await ensureCallRecordingPermissions();
+        await recordingService.startCallTracking(
+          leadId: leadId,
+          phoneNumber: number,
+          callStartedAt: dialedAt,
+        );
+      }
+
       final uri = Uri(scheme: 'tel', path: number);
       final launched = await launchUrl(uri);
       if (!launched) {
@@ -192,6 +263,15 @@ class LeadDetailPage extends HookConsumerWidget {
       isActing.value = false;
       ref.invalidate(leadNotifierProvider);
       await showMessage(error ?? 'Assigned to you');
+    }
+
+    Future<void> openAssignSheet() async {
+      await showAssignLeadSheet(
+        context: context,
+        ref: ref,
+        leadId: leadId,
+        currentAssigneeId: leadAsync.valueOrNull?.assignedUser?.id,
+      );
     }
 
     Future<void> setWonLost({required bool won}) async {
@@ -611,27 +691,43 @@ class LeadDetailPage extends HookConsumerWidget {
                                 const SizedBox(height: 14),
                                 Row(
                                   children: [
-                                    _DetailTabBtn(
-                                      label: 'Details',
-                                      selected: tab.value == _DetailTab.info,
-                                      onTap: () =>
-                                          tab.value = _DetailTab.info,
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: Row(
+                                          children: [
+                                            _DetailTabBtn(
+                                              label: 'Details',
+                                              selected:
+                                                  tab.value == _DetailTab.info,
+                                              onTap: () =>
+                                                  tab.value = _DetailTab.info,
+                                            ),
+                                            const SizedBox(width: 20),
+                                            _DetailTabBtn(
+                                              label: 'Internal Note',
+                                              selected: tab.value ==
+                                                  _DetailTab.internalNote,
+                                              onTap: () => tab.value =
+                                                  _DetailTab.internalNote,
+                                            ),
+                                            const SizedBox(width: 20),
+                                            _DetailTabBtn(
+                                              label: 'Remarks',
+                                              selected: tab.value ==
+                                                  _DetailTab.remarks,
+                                              onTap: () => tab.value =
+                                                  _DetailTab.remarks,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
-                                    const SizedBox(width: 20),
-                                    _DetailTabBtn(
-                                      label: 'Internal Note',
-                                      selected: tab.value ==
-                                          _DetailTab.internalNote,
-                                      onTap: () => tab.value =
-                                          _DetailTab.internalNote,
-                                    ),
-                                    const SizedBox(width: 20),
-                                    _DetailTabBtn(
-                                      label: 'Remarks',
-                                      selected:
-                                          tab.value == _DetailTab.remarks,
-                                      onTap: () =>
-                                          tab.value = _DetailTab.remarks,
+                                    const SizedBox(width: 8),
+                                    _AssignToBtn(
+                                      onTap: isActing.value
+                                          ? null
+                                          : openAssignSheet,
                                     ),
                                   ],
                                 ),
@@ -940,6 +1036,50 @@ class _DetailTabBtn extends StatelessWidget {
   }
 }
 
+class _AssignToBtn extends StatelessWidget {
+  const _AssignToBtn({this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppTheme.goldSoft.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppTheme.goldSoft.withValues(alpha: 0.7)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.person_add_alt_1_rounded,
+                size: 14,
+                color: AppTheme.goldSoft,
+              ),
+              SizedBox(width: 5),
+              Text(
+                'Assign To',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.goldSoft,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DetailsTab extends StatelessWidget {
   const _DetailsTab({
     required this.lead,
@@ -1076,6 +1216,8 @@ class _DetailsTab extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         LastCallCard(leadId: leadId),
+        const SizedBox(height: 12),
+        CallTranscriptionCard(leadId: leadId),
         const SizedBox(height: 12),
         _KeyValueCard(title: 'Contact', rows: contactRows),
         const SizedBox(height: 12),

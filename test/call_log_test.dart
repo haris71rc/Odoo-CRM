@@ -9,9 +9,12 @@ import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/services/call_log_service.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_updater.dart';
+import 'package:odoocrm/features/call_log/domain/utils/connected_call_rule.dart';
 import 'package:odoocrm/features/chatter/domain/entities/chatter_message_entity.dart';
 import 'package:odoocrm/features/chatter/domain/entities/tracking_value_entity.dart';
 import 'package:odoocrm/features/chatter/domain/repository/chatter_repository.dart';
+import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
+import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
 
 void main() {
   group('LeadPropertiesParser', () {
@@ -413,6 +416,112 @@ void main() {
       expect(synced.status, 'dnp');
       expect(synced.totalInboundCalls, 1);
       expect(synced.firstCallDate, DateTime(2026, 8, 10, 10, 0));
+    });
+  });
+
+  group('ConnectedCallRule', () {
+    test('qualifies only when talk time is more than 2 seconds', () {
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:03',
+          status: 'picked',
+        ),
+        isTrue,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:02',
+          status: 'picked',
+        ),
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:00',
+          status: 'picked',
+        ),
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:01',
+          status: 'picked',
+        ),
+        isFalse,
+      );
+    });
+
+    test('rejects missed, DNP, and failed calls even with duration', () {
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:10',
+          status: 'missed',
+        ),
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:10',
+          status: 'dnp',
+        ),
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:10',
+          status: 'not_picked',
+        ),
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:10',
+          status: 'call_failed',
+        ),
+        isFalse,
+      );
+    });
+
+    test('does not move later pipeline stages back to Connected', () {
+      expect(
+        ConnectedCallRule.shouldMoveToConnected('New Prospects'),
+        isTrue,
+      );
+      expect(
+        ConnectedCallRule.shouldMoveToConnected('Do Not Picked'),
+        isTrue,
+      );
+      expect(
+        ConnectedCallRule.shouldMoveToConnected('Not connected (DNP)'),
+        isTrue,
+      );
+      expect(ConnectedCallRule.shouldMoveToConnected('Connected'), isFalse);
+      expect(ConnectedCallRule.shouldMoveToConnected('Follow-Up'), isFalse);
+      expect(ConnectedCallRule.shouldMoveToConnected('Proposal'), isFalse);
+      expect(ConnectedCallRule.shouldMoveToConnected('Won'), isFalse);
+      expect(ConnectedCallRule.shouldMoveToConnected('Lost'), isFalse);
+    });
+  });
+
+  group('LeadListFilters connected stage', () {
+    test('matches Connected and ignores Not connected (DNP)', () {
+      expect(LeadListFilters.isConnectedStage('Connected'), isTrue);
+      expect(LeadListFilters.isConnectedStage('Call Connected'), isTrue);
+      expect(
+        LeadListFilters.isConnectedStage('Not connected (DNP)'),
+        isFalse,
+      );
+      expect(LeadListFilters.isConnectedStage('Do Not Picked'), isFalse);
+    });
+
+    test('findConnectedStageId prefers exact Connected name', () {
+      const stages = [
+        StageEntity(id: 1, name: 'New Prospects'),
+        StageEntity(id: 2, name: 'Not connected (DNP)'),
+        StageEntity(id: 3, name: 'Connected'),
+        StageEntity(id: 4, name: 'Follow-Up'),
+      ];
+      expect(LeadListFilters.findConnectedStageId(stages), 3);
     });
   });
 
