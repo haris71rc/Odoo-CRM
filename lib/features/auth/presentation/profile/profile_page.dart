@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:odoocrm/core/constants/app_constants.dart';
 import 'package:odoocrm/core/providers/app_permissions_provider.dart';
+import 'package:odoocrm/core/providers/tenant_notifier.dart';
 import 'package:odoocrm/core/services/app_permission.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/core/utils/initials.dart';
@@ -77,10 +77,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
   Widget build(BuildContext context) {
     final user = ref.watch(authNotifierProvider).valueOrNull;
     final permissionsAsync = ref.watch(appPermissionsNotifierProvider);
+    final tenant = ref.watch(tenantNotifierProvider).valueOrNull;
     final name = user?.name ?? 'User';
     final email = user?.email ?? user?.login ?? '—';
-    final host =
-        Uri.tryParse(AppConstants.baseUrl)?.host ?? AppConstants.baseUrl;
+    final host = tenant?.host ?? '—';
 
     final rows = [
       ('Email', email),

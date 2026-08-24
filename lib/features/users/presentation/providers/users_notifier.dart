@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
+import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/users/data/datasource/user_remote_datasource.dart';
 import 'package:odoocrm/features/users/data/repository/user_repository_impl.dart';
 import 'package:odoocrm/features/users/domain/entities/user_entity.dart';
@@ -20,6 +21,9 @@ UserRepository userRepository(Ref ref) {
 class UsersNotifier extends _$UsersNotifier {
   @override
   FutureOr<List<UserEntity>> build() async {
+    final isLoggedIn = ref.watch(authNotifierProvider).valueOrNull != null;
+    if (!isLoggedIn) return const [];
+
     final repository = ref.watch(userRepositoryProvider);
     final result = await repository.getInternalUsers();
 
@@ -30,6 +34,11 @@ class UsersNotifier extends _$UsersNotifier {
   }
 
   Future<void> refresh() async {
+    if (ref.read(authNotifierProvider).valueOrNull == null) {
+      state = const AsyncData([]);
+      return;
+    }
+
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final repository = ref.read(userRepositoryProvider);

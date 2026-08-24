@@ -33,6 +33,11 @@ class SecureStorageService {
 
   Future<String?> getLogin() => _storage.read(key: AppConstants.userLoginKey);
 
+  Future<void> saveTenantId(String tenantId) =>
+      _storage.write(key: AppConstants.tenantKey, value: tenantId);
+
+  Future<String?> getTenantId() => _storage.read(key: AppConstants.tenantKey);
+
   Future<bool> hasSession() async {
     final sessionId = await getSessionId();
     final uid = await getUid();

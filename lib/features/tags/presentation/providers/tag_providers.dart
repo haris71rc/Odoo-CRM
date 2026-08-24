@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
+import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/tags/data/datasource/tag_remote_datasource.dart';
 import 'package:odoocrm/features/tags/data/repository/tag_repository_impl.dart';
 import 'package:odoocrm/features/tags/domain/entities/lead_tag_entity.dart';
@@ -21,6 +22,9 @@ TagRepository tagRepository(Ref ref) {
 class LeadTemperatureTagsNotifier extends _$LeadTemperatureTagsNotifier {
   @override
   FutureOr<List<LeadTagEntity>> build() async {
+    final isLoggedIn = ref.watch(authNotifierProvider).valueOrNull != null;
+    if (!isLoggedIn) return const [];
+
     final result =
         await ref.watch(tagRepositoryProvider).getLeadTemperatureTags();
     return result.when(

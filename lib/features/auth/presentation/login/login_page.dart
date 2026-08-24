@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:odoocrm/core/constants/app_constants.dart';
+import 'package:odoocrm/core/constants/app_environment.dart';
+import 'package:odoocrm/core/constants/app_tenant.dart';
+import 'package:odoocrm/core/providers/tenant_notifier.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 
@@ -17,9 +19,17 @@ class LoginPage extends HookConsumerWidget {
     final keepSignedIn = useState(true);
     final isSubmitting = useState(false);
     final errorMessage = useState<String?>(null);
+    final selectedTenant = useState(AppTenant.fallback);
     final theme = Theme.of(context);
-    final host =
-        Uri.tryParse(AppConstants.baseUrl)?.host ?? AppConstants.baseUrl;
+    final showTenantPicker = AppEnvironment.isProd;
+    final savedTenant = ref.watch(tenantNotifierProvider).valueOrNull;
+
+    useEffect(() {
+      if (savedTenant != null) {
+        selectedTenant.value = savedTenant;
+      }
+      return null;
+    }, [savedTenant]);
 
     Future<void> onLogin() async {
       errorMessage.value = null;
@@ -29,6 +39,7 @@ class LoginPage extends HookConsumerWidget {
       final error = await ref.read(authNotifierProvider.notifier).login(
             username: usernameController.text,
             password: passwordController.text,
+            tenant: selectedTenant.value,
           );
       isSubmitting.value = false;
 
@@ -58,9 +69,9 @@ class LoginPage extends HookConsumerWidget {
                           borderRadius: BorderRadius.circular(15),
                         ),
                         alignment: Alignment.center,
-                        child: const Text(
-                          'DL',
-                          style: TextStyle(
+                        child: Text(
+                          selectedTenant.value.mark,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
                             fontSize: 20,
@@ -87,7 +98,29 @@ class LoginPage extends HookConsumerWidget {
                           fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 30),
+                      if (showTenantPicker) ...[
+                        const SizedBox(height: 30),
+                        Text(
+                          'Workspace',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.01,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        _WorkspacePicker(
+                          selected: selectedTenant.value,
+                          onChanged: (tenant) {
+                            selectedTenant.value = tenant;
+                            errorMessage.value = null;
+                            ref
+                                .read(tenantNotifierProvider.notifier)
+                                .select(tenant);
+                          },
+                        ),
+                      ],
+                      SizedBox(height: showTenantPicker ? 14 : 30),
                       Text(
                         'Email',
                         style: theme.textTheme.labelMedium?.copyWith(
@@ -102,8 +135,8 @@ class LoginPage extends HookConsumerWidget {
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
                         style: const TextStyle(fontSize: 15),
-                        decoration: const InputDecoration(
-                          hintText: 'you@digilawyer.ai',
+                        decoration: InputDecoration(
+                          hintText: selectedTenant.value.emailHint,
                         ),
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
@@ -238,7 +271,7 @@ class LoginPage extends HookConsumerWidget {
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          host,
+                          selectedTenant.value.host,
                           style: AppTheme.mono(
                             fontSize: 11,
                             color: AppTheme.textPrimary,
@@ -253,6 +286,61 @@ class LoginPage extends HookConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _WorkspacePicker extends StatelessWidget {
+  const _WorkspacePicker({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final AppTenant selected;
+  final ValueChanged<AppTenant> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.scaffold,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          for (final tenant in AppTenant.values)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onChanged(tenant),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  decoration: BoxDecoration(
+                    color:
+                        tenant == selected ? AppTheme.navy : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    tenant.displayName,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: tenant == selected
+                          ? Colors.white
+                          : AppTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

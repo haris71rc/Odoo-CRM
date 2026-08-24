@@ -1,15 +1,16 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:odoocrm/core/constants/app_constants.dart';
+import 'package:odoocrm/core/constants/app_tenant.dart';
 import 'package:odoocrm/core/error/failures.dart';
 import 'package:odoocrm/core/network/interceptors/cookie_interceptor.dart';
 import 'package:odoocrm/core/network/json_rpc_request.dart';
 
 class DioClient {
-  DioClient(this._secureStorage) {
+  DioClient(this._secureStorage, {AppTenant tenant = AppTenant.fallback}) {
+    _tenant = tenant;
     _dio = Dio(
       BaseOptions(
-        baseUrl: AppConstants.baseUrl,
+        baseUrl: tenant.baseUrl,
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: const Duration(seconds: 30),
         headers: {
@@ -38,9 +39,19 @@ class DioClient {
   }
 
   final FlutterSecureStorage _secureStorage;
+  late AppTenant _tenant;
   late final Dio _dio;
 
   Dio get dio => _dio;
+
+  AppTenant get tenant => _tenant;
+
+  String get databaseName => _tenant.databaseName;
+
+  void applyTenant(AppTenant tenant) {
+    _tenant = tenant;
+    _dio.options.baseUrl = tenant.baseUrl;
+  }
 
   Future<Map<String, dynamic>> postJsonRpc(
     String path,
@@ -60,7 +71,7 @@ class DioClient {
       if (data.containsKey('error')) {
         final error = data['error'];
         final message = _extractErrorMessage(error);
-        throw ApiFailure(message, statusCode: response.statusCode);
+        throw _failureForApiMessage(message, response.statusCode);
       }
 
       return data;
@@ -80,10 +91,23 @@ class DioClient {
         final message = e.response?.data is Map
             ? _extractErrorMessage(e.response?.data['error'])
             : (e.message ?? 'Server error');
-        return ApiFailure(message, statusCode: e.response?.statusCode);
+        return _failureForApiMessage(message, e.response?.statusCode);
       default:
         return UnexpectedFailure(e.message ?? 'Unexpected network error');
     }
+  }
+
+  Failure _failureForApiMessage(String message, int? statusCode) {
+    if (_isSessionExpired(message)) {
+      return AuthFailure(message);
+    }
+    return ApiFailure(message, statusCode: statusCode);
+  }
+
+  bool _isSessionExpired(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('session expired') ||
+        normalized.contains('sessionexpired');
   }
 
   String _extractErrorMessage(dynamic error) {

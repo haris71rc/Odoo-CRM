@@ -21,7 +21,7 @@ class AuthRemoteDatasource {
     required String password,
   }) async {
     final request = JsonRpcRequest.authenticate(
-      db: AppConstants.databaseName,
+      db: _dioClient.databaseName,
       login: login,
       password: password,
     );

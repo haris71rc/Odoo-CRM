@@ -366,9 +366,7 @@ class LeadNotifier extends _$LeadNotifier {
     );
     final repository = ref.watch(leadRepositoryProvider);
 
-    if (serverKey.todayMine && currentUserId == null) {
-      return const [];
-    }
+    if (currentUserId == null) return const [];
 
     var range = LeadDateRange.resolve(
       filter: serverKey.dateFilter,

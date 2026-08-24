@@ -7,7 +7,7 @@ part of 'call_transcription_notifier.dart';
 // **************************************************************************
 
 String _$callTranscriptionNotifierHash() =>
-    r'8698f4539a4671c6db668632997f0fa383a351f1';
+    r'0885f9d3c122dabc5e1272c9b991cf1356f09bf9';
 
 /// Copied from Dart SDK
 class _SystemHash {

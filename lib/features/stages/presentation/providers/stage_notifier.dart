@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
+import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/stages/data/datasource/stage_remote_datasource.dart';
 import 'package:odoocrm/features/stages/data/repository/stage_repository_impl.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
@@ -19,6 +20,9 @@ StageRepository stageRepository(Ref ref) {
 class StageNotifier extends _$StageNotifier {
   @override
   FutureOr<List<StageEntity>> build() async {
+    final isLoggedIn = ref.watch(authNotifierProvider).valueOrNull != null;
+    if (!isLoggedIn) return const [];
+
     final repository = ref.watch(stageRepositoryProvider);
     final result = await repository.getStages();
 
