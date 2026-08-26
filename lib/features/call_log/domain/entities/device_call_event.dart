@@ -11,7 +11,7 @@ class DeviceCallEvent {
   /// Device call timestamp (local wall-clock).
   final DateTime at;
 
-  /// Duration as `MM:SS`.
+  /// Duration from the Android dialer, formatted as `MM:SS` or `HH:MM:SS`.
   final String duration;
 
   /// Mapped Call Status key.

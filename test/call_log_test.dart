@@ -232,6 +232,46 @@ void main() {
       expect(snapshot.callLog.responseTimeMinutes, 15.75);
     });
 
+    test('parses dict payload keyed only by property name', () {
+      final snapshot = parser.parse({
+        'first_dt': '2026-08-10 18:30:49',
+        '755dd30af8e6281e': false,
+        'inbound': 0,
+        'outbound': 0,
+        'response': 0.0,
+        'd911c6d388aa8070': '01:00',
+        '8943dbf5bf8cc84f': ['picked'],
+      });
+
+      expect(snapshot.callLog.firstCallDate, DateTime(2026, 8, 10, 18, 30, 49));
+      expect(snapshot.callLog.totalInboundCalls, 0);
+      expect(snapshot.callLog.totalOutboundCalls, 0);
+      expect(snapshot.callLog.responseTimeMinutes, 0);
+    });
+
+    test('writes last date and outbound onto existing Odoo property names', () {
+      final first = DateTime(2026, 8, 10, 18, 30, 49);
+      final writeMap = parser.mergeCallLogForWrite(
+        sampleReadList,
+        CallLog(
+          firstCallDate: first,
+          lastCallDate: first,
+          totalDuration: '01:00',
+          status: 'picked',
+          totalInboundCalls: 0,
+          totalOutboundCalls: 1,
+          responseTimeMinutes: 12.5,
+        ),
+      ) as Map;
+
+      expect(writeMap['first_dt'], '2026-08-10 18:30:49');
+      expect(writeMap['755dd30af8e6281e'], '2026-08-10 18:30:49');
+      expect(writeMap['outbound'], 1);
+      expect(writeMap['inbound'], 0);
+      expect(writeMap['response'], 12.5);
+      expect(writeMap['d911c6d388aa8070'], '01:00');
+    });
+
     test('parses call status options from Odoo tags definition', () {
       final options = parser.parseCallStatusOptions([
         {
@@ -372,6 +412,26 @@ void main() {
       );
     });
 
+    test('uses first call as duplicate anchor when last call is missing', () {
+      final first = DateTime(2026, 8, 10, 18, 30, 49);
+      expect(
+        CallLogUpdater.shouldApplyDeviceOutbound(
+          deviceAt: first.add(const Duration(seconds: 10)),
+          lastCallDate: null,
+          firstCallDate: first,
+        ),
+        isFalse,
+      );
+      expect(
+        CallLogUpdater.shouldApplyDeviceOutbound(
+          deviceAt: first.add(const Duration(minutes: 2)),
+          lastCallDate: null,
+          firstCallDate: first,
+        ),
+        isTrue,
+      );
+    });
+
     test('applyDeviceSync merges newer dialer outbound and inbound count', () {
       final existing = CallLog(
         firstCallDate: DateTime(2026, 8, 10, 10, 0),
@@ -416,6 +476,84 @@ void main() {
       expect(synced.status, 'dnp');
       expect(synced.totalInboundCalls, 1);
       expect(synced.firstCallDate, DateTime(2026, 8, 10, 10, 0));
+    });
+
+    test('repairs screenshot-like Odoo row with empty last and zero outbound', () {
+      final first = DateTime(2026, 8, 10, 18, 30, 49);
+      final repaired = CallLogUpdater.repairIncomplete(
+        existing: CallLog(
+          firstCallDate: first,
+          status: 'picked',
+          totalDuration: '01:00',
+          totalInboundCalls: 0,
+          totalOutboundCalls: 0,
+          responseTimeMinutes: 0,
+        ),
+        leadCreatedAt: DateTime(2026, 8, 10, 17, 30, 49),
+      );
+
+      expect(repaired.lastCallDate, first);
+      expect(repaired.totalOutboundCalls, 1);
+      expect(repaired.totalInboundCalls, 0);
+      expect(repaired.responseTimeMinutes, 60.0);
+      expect(repaired.totalDuration, '01:00');
+    });
+
+    test('device sync does not double-count when last is empty but first is set', () {
+      final first = DateTime(2026, 8, 10, 18, 30, 49);
+      final synced = CallLogUpdater.applyDeviceSync(
+        existing: CallLog(
+          firstCallDate: first,
+          totalDuration: '01:00',
+          status: 'picked',
+          totalOutboundCalls: 0,
+          totalInboundCalls: 0,
+        ),
+        deviceCalls: [
+          DeviceCallEvent(
+            at: first.add(const Duration(seconds: 8)),
+            duration: '01:00',
+            status: 'picked',
+            isOutbound: true,
+            isInbound: false,
+          ),
+        ],
+        leadCreatedAt: DateTime(2026, 8, 10, 17, 0),
+      );
+
+      expect(synced.lastCallDate, first.add(const Duration(seconds: 8)));
+      expect(synced.totalOutboundCalls, 1);
+      expect(synced.totalDuration, '01:00');
+    });
+
+    test('overlays Android dialer duration onto a same-call placeholder', () {
+      final at = DateTime(2026, 8, 10, 18, 30, 49);
+      final synced = CallLogUpdater.applyDeviceSync(
+        existing: CallLog(
+          firstCallDate: at,
+          lastCallDate: at,
+          duration: '00:00',
+          totalDuration: '00:00',
+          status: 'picked',
+          totalOutboundCalls: 1,
+          totalInboundCalls: 0,
+        ),
+        deviceCalls: [
+          DeviceCallEvent(
+            at: at.add(const Duration(seconds: 12)),
+            duration: '01:00',
+            status: 'picked',
+            isOutbound: true,
+            isInbound: false,
+          ),
+        ],
+        leadCreatedAt: DateTime(2026, 8, 10, 17, 0),
+      );
+
+      expect(synced.totalOutboundCalls, 1);
+      expect(synced.duration, '01:00');
+      expect(synced.totalDuration, '01:00');
+      expect(synced.lastCallDate, at.add(const Duration(seconds: 12)));
     });
   });
 

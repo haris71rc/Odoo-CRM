@@ -23,13 +23,10 @@ import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart
 import 'package:odoocrm/features/leads/presentation/widgets/assign_lead_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_actions_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_fab.dart';
-import 'package:odoocrm/core/services/call_recording_service.dart';
 import 'package:odoocrm/core/services/whatsapp_service.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
-import 'package:odoocrm/features/call_log/presentation/providers/call_transcription_notifier.dart';
 import 'package:odoocrm/features/call_log/presentation/widgets/call_log_dialogs.dart';
-import 'package:odoocrm/features/call_log/presentation/widgets/call_transcription_card.dart';
 import 'package:odoocrm/features/call_log/presentation/widgets/last_call_card.dart';
 import 'package:odoocrm/features/quotations/presentation/providers/quotation_notifier.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
@@ -76,50 +73,11 @@ class LeadDetailPage extends HookConsumerWidget {
     final currentUser = ref.watch(authNotifierProvider).valueOrNull;
     final stagesAsync = ref.watch(stageNotifierProvider);
     ref.watch(leadCallLogProvider(leadId));
-    ref.watch(callTranscriptionNotifierProvider(leadId));
     final isActing = useState(false);
     final isCreatingQuotation = useState(false);
     final tab = useState(_DetailTab.info);
     final pendingDial = useState<_PendingDial?>(null);
     final isLoggingCall = useState(false);
-
-    useEffect(() {
-      final recordingService = ref.read(callRecordingServiceProvider);
-      if (!recordingService.isSupported) return null;
-
-      recordingService.setListener((result) {
-        if (!context.mounted) return;
-        if (result.success && result.name != null) {
-          ref
-              .read(callTranscriptionNotifierProvider(leadId).notifier)
-              .onRecordingFound(result);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Found recording: ${result.name}')),
-          );
-          return;
-        }
-        if (result.code == 'RECORDING_NOT_FOUND') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Call ended, but recording was not found.'),
-            ),
-          );
-          return;
-        }
-        if (result.code == 'MEDIA_PERMISSION_DENIED') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                result.message ??
-                    'Audio access permission is required to detect call recordings.',
-              ),
-            ),
-          );
-        }
-      });
-
-      return () => recordingService.setListener(null);
-    }, [leadId]);
 
     Future<void> showMessage(String message) async {
       if (!context.mounted) return;
@@ -192,10 +150,16 @@ class LeadDetailPage extends HookConsumerWidget {
       if (!context.mounted) return;
 
       if (callLog != null) {
-        // Device call log found — save directly using actual duration.
         await persistCallLog(
           callLog,
           fromAndroidDevice: reader.isSupported,
+        );
+        return;
+      }
+
+      if (reader.isSupported) {
+        await showMessage(
+          'Android call log is not ready yet. Open this lead again to sync duration from the dialer.',
         );
         return;
       }
@@ -232,16 +196,6 @@ class LeadDetailPage extends HookConsumerWidget {
 
       final dialedAt = DateTime.now();
       pendingDial.value = _PendingDial(phone: number, dialedAt: dialedAt);
-
-      final recordingService = ref.read(callRecordingServiceProvider);
-      if (recordingService.isSupported) {
-        await ensureCallRecordingPermissions();
-        await recordingService.startCallTracking(
-          leadId: leadId,
-          phoneNumber: number,
-          callStartedAt: dialedAt,
-        );
-      }
 
       final uri = Uri(scheme: 'tel', path: number);
       final launched = await launchUrl(uri);
@@ -1216,8 +1170,6 @@ class _DetailsTab extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         LastCallCard(leadId: leadId),
-        const SizedBox(height: 12),
-        CallTranscriptionCard(leadId: leadId),
         const SizedBox(height: 12),
         _KeyValueCard(title: 'Contact', rows: contactRows),
         const SizedBox(height: 12),

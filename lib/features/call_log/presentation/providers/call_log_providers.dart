@@ -6,6 +6,7 @@ import 'package:odoocrm/features/call_log/data/repository/call_log_repository_im
 import 'package:odoocrm/features/call_log/data/services/device_call_reader.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dart';
+import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/services/call_log_service.dart';
 import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
@@ -61,22 +62,23 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
     failure: (_) => const CallLog(),
   );
 
-  final reader = ref.read(deviceCallReaderProvider);
-  if (!reader.isSupported) return callLog;
-
   try {
     final lead = await ref.read(leadDetailNotifierProvider(leadId).future);
-    final phone = lead.phone ?? lead.mobile;
-    if (phone == null || phone.isEmpty) return callLog;
+    final reader = ref.read(deviceCallReaderProvider);
+    var deviceCalls = const <DeviceCallEvent>[];
 
-    final statusOptions = await ref.read(callStatusOptionsProvider(leadId).future);
-    final deviceCalls = await reader.findCallsForLead(
-      phone: phone,
-      since: lead.createdDate,
-      statusOptions: statusOptions,
-    );
-
-    if (deviceCalls.isEmpty) return callLog;
+    if (reader.isSupported) {
+      final phone = lead.phone ?? lead.mobile;
+      if (phone != null && phone.isNotEmpty) {
+        final statusOptions =
+            await ref.read(callStatusOptionsProvider(leadId).future);
+        deviceCalls = await reader.findCallsForLead(
+          phone: phone,
+          since: lead.createdDate,
+          statusOptions: statusOptions,
+        );
+      }
+    }
 
     final previous = callLog;
     final syncResult = await service.syncFromDevice(

@@ -134,23 +134,34 @@ class LeadPropertiesParser {
       final map = Map<String, dynamic>.from(item);
       final label = _propertyLabel(map);
       final value = map['value'];
-      final field = _resolveField(label, map['type']?.toString());
+      final field = _resolveField(
+        label,
+        map['type']?.toString(),
+        name: map['name']?.toString(),
+      );
 
       switch (field) {
         case _CallLogField.firstCallDate:
           firstDate ??= _parseDateTime(value);
+          break;
         case _CallLogField.lastCallDate:
           lastDate ??= _parseDateTime(value);
+          break;
         case _CallLogField.totalDuration:
           totalDuration ??= _asString(value);
+          break;
         case _CallLogField.status:
           status ??= _parseStatus(value);
+          break;
         case _CallLogField.totalInboundCalls:
           inbound ??= _parseInt(value);
+          break;
         case _CallLogField.totalOutboundCalls:
           outbound ??= _parseInt(value);
+          break;
         case _CallLogField.responseTimeMinutes:
           responseTime ??= _parseDouble(value);
+          break;
         case null:
           break;
       }
@@ -178,7 +189,7 @@ class LeadPropertiesParser {
       final type = map['type']?.toString();
       if (type == 'separator') continue;
 
-      final field = _resolveField(label, type);
+      final field = _resolveField(label, type, name: map['name']?.toString());
       if (field == null) continue;
 
       final value = _valueForField(field, callLog, map);
@@ -200,7 +211,7 @@ class LeadPropertiesParser {
     if (!patched.contains(_CallLogField.firstCallDate) &&
         callLog.firstCallDate != null) {
       list.add(_newListProperty(
-        name: 'call_date_time_first',
+        name: 'first_dt',
         label: 'Call Date & Time (First)',
         type: 'datetime',
         value: _formatOdooDateTime(callLog.firstCallDate!),
@@ -238,7 +249,7 @@ class LeadPropertiesParser {
     if (!patched.contains(_CallLogField.totalInboundCalls) &&
         callLog.totalInboundCalls != null) {
       list.add(_newListProperty(
-        name: 'total_inbound_calls',
+        name: 'inbound',
         label: 'Total InBound Calls',
         type: 'integer',
         value: callLog.totalInboundCalls,
@@ -247,7 +258,7 @@ class LeadPropertiesParser {
     if (!patched.contains(_CallLogField.totalOutboundCalls) &&
         callLog.totalOutboundCalls != null) {
       list.add(_newListProperty(
-        name: 'total_outbound_calls',
+        name: 'outbound',
         label: 'Total Outbound Call',
         type: 'integer',
         value: callLog.totalOutboundCalls,
@@ -256,7 +267,7 @@ class LeadPropertiesParser {
     if (!patched.contains(_CallLogField.responseTimeMinutes) &&
         callLog.responseTimeMinutes != null) {
       list.add(_newListProperty(
-        name: 'response_time_minutes',
+        name: 'response',
         label: 'Response Time (Minutes)',
         type: 'float',
         value: callLog.responseTimeMinutes,
@@ -296,7 +307,10 @@ class LeadPropertiesParser {
     }
   }
 
-  _CallLogField? _resolveField(String label, String? type) {
+  _CallLogField? _resolveField(String label, String? type, {String? name}) {
+    final fromName = _resolveFieldFromName(name);
+    if (fromName != null) return fromName;
+
     final normalized = label.toLowerCase();
 
     if (_isFirstCallDateLabel(normalized)) {
@@ -337,6 +351,53 @@ class LeadPropertiesParser {
       return _CallLogField.responseTimeMinutes;
     }
 
+    return null;
+  }
+
+  _CallLogField? _resolveFieldFromName(String? name) {
+    if (name == null || name.trim().isEmpty) return null;
+    final compact = name.toLowerCase().replaceAll(RegExp(r'[\s_()-]+'), '');
+    if (compact.isEmpty) return null;
+
+    if (compact == 'firstdt' ||
+        compact == 'calldatetimefirst' ||
+        compact == 'firstcall' ||
+        (compact.contains('first') &&
+            (compact.contains('dt') || compact.contains('date')))) {
+      return _CallLogField.firstCallDate;
+    }
+    if (compact == 'lastdt' ||
+        compact == 'calldatetimelast' ||
+        compact == 'lastcall' ||
+        (compact.contains('last') &&
+            (compact.contains('dt') ||
+                compact.contains('date') ||
+                compact.contains('call')))) {
+      return _CallLogField.lastCallDate;
+    }
+    if (compact == 'inbound' ||
+        compact == 'totalinbound' ||
+        compact == 'totalinboundcall' ||
+        compact == 'totalinboundcalls') {
+      return _CallLogField.totalInboundCalls;
+    }
+    if (compact == 'outbound' ||
+        compact == 'totaloutbound' ||
+        compact == 'totaloutboundcall' ||
+        compact == 'totaloutboundcalls') {
+      return _CallLogField.totalOutboundCalls;
+    }
+    if (compact == 'response' || compact.contains('responsetime')) {
+      return _CallLogField.responseTimeMinutes;
+    }
+    if (compact == 'totalcallduration' ||
+        compact == 'callduration' ||
+        compact == 'totalduration') {
+      return _CallLogField.totalDuration;
+    }
+    if (compact == 'callstatus') {
+      return _CallLogField.status;
+    }
     return null;
   }
 

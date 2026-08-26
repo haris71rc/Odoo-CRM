@@ -222,7 +222,10 @@ class _CallDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = <(String, String)>[
       ('First call', _formatCallDate(callLog.firstCallDate)),
-      ('Last call', _formatCallDate(callLog.lastCallDate)),
+      (
+        'Last call',
+        _formatCallDate(callLog.lastCallDate ?? callLog.firstCallDate),
+      ),
       ('Status', _formatStatus(callLog.status)),
       ('Total duration', callLog.totalDuration ?? callLog.duration ?? '—'),
       ('Inbound calls', _formatCount(callLog.totalInboundCalls)),

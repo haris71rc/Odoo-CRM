@@ -54,9 +54,12 @@ class CallLogService {
       return Error(existingResult.failureOrNull!);
     }
 
-    final merged = CallLogUpdater.applyOutboundCall(
-      existing: existingResult.valueOrNull ?? const CallLog(),
-      callEvent: callEvent,
+    final merged = CallLogUpdater.repairIncomplete(
+      existing: CallLogUpdater.applyOutboundCall(
+        existing: existingResult.valueOrNull ?? const CallLog(),
+        callEvent: callEvent,
+        leadCreatedAt: leadCreatedAt,
+      ),
       leadCreatedAt: leadCreatedAt,
     );
 
@@ -108,15 +111,7 @@ class CallLogService {
       leadCreatedAt: leadCreatedAt,
     );
 
-    final changed = synced.lastCallDate != existing.lastCallDate ||
-        synced.totalDuration != existing.totalDuration ||
-        synced.totalOutboundCalls != existing.totalOutboundCalls ||
-        synced.totalInboundCalls != existing.totalInboundCalls ||
-        synced.status != existing.status ||
-        synced.firstCallDate != existing.firstCallDate ||
-        synced.responseTimeMinutes != existing.responseTimeMinutes;
-
-    if (changed) {
+    if (CallLogUpdater.metricsChanged(existing, synced)) {
       final saveResult = await saveCallLog(leadId: leadId, callLog: synced);
       if (saveResult.isFailure) return Error(saveResult.failureOrNull!);
     }

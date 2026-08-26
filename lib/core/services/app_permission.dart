@@ -9,10 +9,6 @@ enum AppPermissionKind {
   phone(
     title: 'Phone & Call Log',
     subtitle: 'Needed to place calls and save call duration / status',
-  ),
-  microphone(
-    title: 'Microphone',
-    subtitle: 'Needed for on-device call recording transcription',
   );
 
   const AppPermissionKind({
@@ -29,8 +25,6 @@ enum AppPermissionKind {
         return Permission.contacts;
       case AppPermissionKind.phone:
         return Permission.phone;
-      case AppPermissionKind.microphone:
-        return Permission.microphone;
     }
   }
 }

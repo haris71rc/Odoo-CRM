@@ -6,9 +6,10 @@ import 'package:odoocrm/features/call_log/data/services/call_status_mapper.dart'
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dart';
 import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
+import 'package:odoocrm/features/call_log/domain/utils/call_log_duration.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-/// Reads native call log after the dialer returns (Android).
+/// Reads native Android dialer call-log entries (timestamp, duration, type).
 class DeviceCallReader {
   const DeviceCallReader({
     CallStatusMapper statusMapper = const CallStatusMapper(),
@@ -26,6 +27,10 @@ class DeviceCallReader {
     return result.isGranted;
   }
 
+  /// Latest dialer row for [phone] at or after [dialedAt].
+  ///
+  /// Android writes the row after the call ends, so this polls until the
+  /// entry appears. Duration, timestamp, and status come from the dialer.
   Future<CallLog?> findRecentCall({
     required String phone,
     required DateTime dialedAt,
@@ -39,43 +44,20 @@ class DeviceCallReader {
     final normalizedTarget = PhoneNumberUtils.normalize(phone);
     if (normalizedTarget.isEmpty) return null;
 
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-
-    try {
-      final fromMs = dialedAt
-          .subtract(const Duration(seconds: 5))
-          .millisecondsSinceEpoch;
-
-      final entries = await native.CallLog.query(dateFrom: fromMs);
-      if (entries.isEmpty) return null;
-
-      native.CallLogEntry? best;
-      for (final entry in entries) {
-        final number = entry.number ?? entry.formattedNumber ?? '';
-        if (!_numbersMatch(normalizedTarget, number)) continue;
-
-        final ts = entry.timestamp;
-        if (ts != null && ts < fromMs) continue;
-
-        if (best == null) {
-          best = entry;
-          continue;
-        }
-        final bestTs = best.timestamp ?? 0;
-        final entryTs = ts ?? 0;
-        if (entryTs >= bestTs) best = entry;
+    native.CallLogEntry? entry;
+    for (var attempt = 0; attempt < 8 && entry == null; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 450));
       }
-
-      if (best == null) return null;
-      return _toCallLog(
-        best,
-        // Prefer dial time for CRM-initiated calls (stable wall-clock).
-        at: dialedAt,
-        statusOptions: statusOptions,
+      entry = await _queryLatestMatching(
+        normalizedTarget: normalizedTarget,
+        from: dialedAt,
+        preferOutbound: true,
       );
-    } catch (_) {
-      return null;
     }
+
+    if (entry == null) return null;
+    return _toCallLog(entry, statusOptions: statusOptions);
   }
 
   /// Device calls for [phone] since [since], oldest first.
@@ -96,47 +78,19 @@ class DeviceCallReader {
 
     try {
       final fromMs = (since ?? DateTime.fromMillisecondsSinceEpoch(0))
-          .subtract(const Duration(hours: 1))
           .millisecondsSinceEpoch;
 
       final entries = await native.CallLog.query(dateFrom: fromMs);
       final events = <DeviceCallEvent>[];
 
       for (final entry in entries) {
-        final number = entry.number ?? entry.formattedNumber ?? '';
-        if (!_numbersMatch(normalizedTarget, number)) continue;
-
-        final ts = entry.timestamp;
-        if (ts == null) continue;
-        if (ts < fromMs) continue;
-
-        final at = DateTime.fromMillisecondsSinceEpoch(ts);
-        if (since != null && at.isBefore(since.subtract(const Duration(days: 1)))) {
-          continue;
-        }
-
-        final durationSeconds = entry.duration ?? 0;
-        final isOutbound = _isOutbound(entry.callType);
-        final isInbound = _isInbound(entry.callType);
-        if (!isOutbound && !isInbound) continue;
-
-        final status = statusOptions.isEmpty
-            ? _legacyMapStatus(entry.callType, durationSeconds)
-            : _statusMapper.mapDeviceStatus(
-                type: entry.callType,
-                durationSeconds: durationSeconds,
-                options: statusOptions,
-              );
-
-        events.add(
-          DeviceCallEvent(
-            at: at,
-            duration: _formatDuration(durationSeconds),
-            status: status,
-            isOutbound: isOutbound,
-            isInbound: isInbound,
-          ),
+        final event = _toDeviceEvent(
+          entry,
+          normalizedTarget: normalizedTarget,
+          fromMs: fromMs,
+          statusOptions: statusOptions,
         );
+        if (event != null) events.add(event);
       }
 
       events.sort((a, b) => a.at.compareTo(b.at));
@@ -157,6 +111,99 @@ class DeviceCallReader {
 
     final events = await findCallsForLead(phone: phone, since: since);
     return events.where((e) => e.isInbound).length;
+  }
+
+  Future<native.CallLogEntry?> _queryLatestMatching({
+    required String normalizedTarget,
+    required DateTime from,
+    required bool preferOutbound,
+  }) async {
+    try {
+      final fromMs = from.millisecondsSinceEpoch;
+      final entries = await native.CallLog.query(dateFrom: fromMs);
+      native.CallLogEntry? best;
+      native.CallLogEntry? bestAny;
+
+      for (final entry in entries) {
+        if (!_matchesPhone(normalizedTarget, entry)) continue;
+        final ts = entry.timestamp;
+        if (ts == null || ts < fromMs) continue;
+
+        bestAny = _later(bestAny, entry);
+        if (preferOutbound && !_isOutbound(entry.callType)) continue;
+        best = _later(best, entry);
+      }
+
+      return best ?? bestAny;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  DeviceCallEvent? _toDeviceEvent(
+    native.CallLogEntry entry, {
+    required String normalizedTarget,
+    required int fromMs,
+    required List<CallStatusOption> statusOptions,
+  }) {
+    if (!_matchesPhone(normalizedTarget, entry)) return null;
+
+    final ts = entry.timestamp;
+    if (ts == null || ts < fromMs) return null;
+
+    final isOutbound = _isOutbound(entry.callType);
+    final isInbound = _isInbound(entry.callType);
+    if (!isOutbound && !isInbound) return null;
+
+    final durationSeconds = entry.duration ?? 0;
+    return DeviceCallEvent(
+      at: DateTime.fromMillisecondsSinceEpoch(ts),
+      duration: CallLogDuration.formatFromSeconds(durationSeconds),
+      status: _statusFor(entry.callType, durationSeconds, statusOptions),
+      isOutbound: isOutbound,
+      isInbound: isInbound,
+    );
+  }
+
+  CallLog _toCallLog(
+    native.CallLogEntry entry, {
+    required List<CallStatusOption> statusOptions,
+  }) {
+    final ts = entry.timestamp;
+    final durationSeconds = entry.duration ?? 0;
+    return CallLog(
+      lastCallDate:
+          ts != null ? DateTime.fromMillisecondsSinceEpoch(ts) : null,
+      duration: CallLogDuration.formatFromSeconds(durationSeconds),
+      status: _statusFor(entry.callType, durationSeconds, statusOptions),
+    );
+  }
+
+  String _statusFor(
+    native.CallType? type,
+    int durationSeconds,
+    List<CallStatusOption> statusOptions,
+  ) {
+    if (statusOptions.isEmpty) {
+      return _legacyMapStatus(type, durationSeconds);
+    }
+    return _statusMapper.mapDeviceStatus(
+      type: type,
+      durationSeconds: durationSeconds,
+      options: statusOptions,
+    );
+  }
+
+  bool _matchesPhone(String normalizedTarget, native.CallLogEntry entry) {
+    final number = entry.number ?? entry.formattedNumber ?? '';
+    return _numbersMatch(normalizedTarget, number);
+  }
+
+  native.CallLogEntry _later(native.CallLogEntry? current, native.CallLogEntry next) {
+    if (current == null) return next;
+    final currentTs = current.timestamp ?? 0;
+    final nextTs = next.timestamp ?? 0;
+    return nextTs >= currentTs ? next : current;
   }
 
   bool _isInbound(native.CallType? type) {
@@ -183,27 +230,6 @@ class DeviceCallReader {
     return a == b;
   }
 
-  CallLog _toCallLog(
-    native.CallLogEntry entry, {
-    required DateTime at,
-    required List<CallStatusOption> statusOptions,
-  }) {
-    final durationSeconds = entry.duration ?? 0;
-    final status = statusOptions.isEmpty
-        ? _legacyMapStatus(entry.callType, durationSeconds)
-        : _statusMapper.mapDeviceStatus(
-            type: entry.callType,
-            durationSeconds: durationSeconds,
-            options: statusOptions,
-          );
-
-    return CallLog(
-      lastCallDate: at,
-      duration: _formatDuration(durationSeconds),
-      status: status,
-    );
-  }
-
   String _legacyMapStatus(native.CallType? type, int durationSeconds) {
     switch (type) {
       case native.CallType.missed:
@@ -223,12 +249,5 @@ class DeviceCallReader {
       case null:
         return durationSeconds > 0 ? 'picked' : 'failed';
     }
-  }
-
-  String _formatDuration(int seconds) {
-    final safe = seconds < 0 ? 0 : seconds;
-    final minutes = safe ~/ 60;
-    final secs = safe % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 }

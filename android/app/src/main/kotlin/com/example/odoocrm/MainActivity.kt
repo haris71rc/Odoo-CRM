@@ -13,8 +13,6 @@ import android.provider.ContactsContract
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.bigoh.odoocrm.callrecording.CallRecordingChannelHandler
-import com.bigoh.odoocrm.callrecording.CallRecordingConfig
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -39,8 +37,6 @@ class MainActivity : FlutterActivity() {
     private val whatsAppPackages = listOf("com.whatsapp", "com.whatsapp.w4b")
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
-
-    private var callRecordingHandler: CallRecordingChannelHandler? = null
 
     private var pendingCallResult: MethodChannel.Result? = null
     private var pendingPhone: String? = null
@@ -70,27 +66,6 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
-
-        val callRecordingChannel = MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            CallRecordingConfig.CHANNEL_NAME,
-        )
-        callRecordingHandler = CallRecordingChannelHandler(this, callRecordingChannel).also { handler ->
-            callRecordingChannel.setMethodCallHandler { call, result ->
-                handler.handleMethodCall(call.method, call.arguments, result)
-            }
-        }
-    }
-
-    override fun onDestroy() {
-        callRecordingHandler?.dispose()
-        callRecordingHandler = null
-        super.onDestroy()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        callRecordingHandler?.onActivityResumed()
     }
 
     override fun onRequestPermissionsResult(
@@ -99,15 +74,6 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == CallRecordingConfig.REQUEST_CALL_RECORDING) {
-            callRecordingHandler?.onRequestPermissionsResult(
-                requestCode,
-                permissions,
-                grantResults,
-            )
-            return
-        }
 
         if (requestCode != REQUEST_WHATSAPP) return
 

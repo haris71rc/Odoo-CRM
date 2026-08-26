@@ -44,7 +44,7 @@ Future<CallLog?> showCallOutcomeSheet({
               ),
               const SizedBox(height: 6),
               const Text(
-                'Select how the call ended. Duration is recorded from the device call log when available.',
+                'Duration, time and status are read from the Android call log when available.',
                 style: TextStyle(
                   fontSize: 13,
                   color: AppTheme.textBody,
@@ -63,7 +63,6 @@ Future<CallLog?> showCallOutcomeSheet({
                       context,
                       CallLog(
                         lastCallDate: dialedAt,
-                        duration: '00:00',
                         status: option.key,
                       ),
                     );
