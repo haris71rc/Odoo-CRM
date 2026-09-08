@@ -607,9 +607,17 @@ class LeadPropertiesParser {
         final n = key.toLowerCase();
         if (n.contains('pick') && !n.contains('not')) return key;
       }
+      for (final key in definedKeys) {
+        final n = key.toLowerCase();
+        if (n.contains('answer') || n.contains('connect')) return key;
+      }
+      // Prefer leaving the device hint intact over inventing the first tag
+      // (often DNP), which would block Connected promotion.
+      return normalizedStatus;
     }
 
-    return definedKeys.first;
+    // Unknown hint — keep it; do not fall back to the first defined tag.
+    return normalizedStatus;
   }
 
   List<String> _definedTagKeys(dynamic tagsDefinition) {

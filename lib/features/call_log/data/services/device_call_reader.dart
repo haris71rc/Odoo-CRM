@@ -30,11 +30,17 @@ class DeviceCallReader {
   /// Latest dialer row for [phone] at or after [dialedAt].
   ///
   /// Android writes the row after the call ends, so this polls until the
-  /// entry appears. Duration, timestamp, and status come from the dialer.
+  /// entry appears, then returns quickly. A short extra wait is used only when
+  /// the row exists but duration is still 0 (some OEMs fill duration late).
+  /// DNP / failed calls keep duration 0, so that wait is capped.
+  ///
+  /// [dialedAt] is kept as the CRM wall-clock for [CallLog.lastCallDate] so
+  /// later dialer overlays can still re-trigger Connected promotion.
   Future<CallLog?> findRecentCall({
     required String phone,
     required DateTime dialedAt,
     List<CallStatusOption> statusOptions = const [],
+    int maxAttempts = 8,
   }) async {
     if (!isSupported) return null;
 
@@ -45,19 +51,37 @@ class DeviceCallReader {
     if (normalizedTarget.isEmpty) return null;
 
     native.CallLogEntry? entry;
-    for (var attempt = 0; attempt < 8 && entry == null; attempt++) {
+    var zeroDurationSightings = 0;
+    // At most ~1s extra once a row exists with duration still 0.
+    const maxZeroDurationWait = 3;
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0) {
-        await Future<void>.delayed(const Duration(milliseconds: 450));
+        await Future<void>.delayed(const Duration(milliseconds: 350));
       }
-      entry = await _queryLatestMatching(
+      final candidate = await _queryLatestMatching(
         normalizedTarget: normalizedTarget,
         from: dialedAt,
         preferOutbound: true,
       );
+      if (candidate == null) continue;
+
+      entry = candidate;
+      final durationSeconds = candidate.duration ?? 0;
+      if (durationSeconds > 0) break;
+
+      // Row found — don't stall DNP/failed (duration stays 0 forever).
+      zeroDurationSightings++;
+      if (zeroDurationSightings >= maxZeroDurationWait) break;
     }
 
     if (entry == null) return null;
-    return _toCallLog(entry, statusOptions: statusOptions);
+    return _toCallLog(
+      entry,
+      // Prefer dial time for CRM-initiated calls (stable wall-clock).
+      at: dialedAt,
+      statusOptions: statusOptions,
+    );
   }
 
   /// Device calls for [phone] since [since], oldest first.
@@ -119,7 +143,10 @@ class DeviceCallReader {
     required bool preferOutbound,
   }) async {
     try {
-      final fromMs = from.millisecondsSinceEpoch;
+      // Dialer timestamps can land slightly before CRM dialedAt (set before
+      // launchUrl), so look back a few seconds to avoid missing the row.
+      final fromMs =
+          from.subtract(const Duration(seconds: 15)).millisecondsSinceEpoch;
       final entries = await native.CallLog.query(dateFrom: fromMs);
       native.CallLogEntry? best;
       native.CallLogEntry? bestAny;
@@ -167,13 +194,14 @@ class DeviceCallReader {
 
   CallLog _toCallLog(
     native.CallLogEntry entry, {
+    DateTime? at,
     required List<CallStatusOption> statusOptions,
   }) {
     final ts = entry.timestamp;
     final durationSeconds = entry.duration ?? 0;
     return CallLog(
-      lastCallDate:
-          ts != null ? DateTime.fromMillisecondsSinceEpoch(ts) : null,
+      lastCallDate: at ??
+          (ts != null ? DateTime.fromMillisecondsSinceEpoch(ts) : null),
       duration: CallLogDuration.formatFromSeconds(durationSeconds),
       status: _statusFor(entry.callType, durationSeconds, statusOptions),
     );
@@ -236,10 +264,10 @@ class DeviceCallReader {
         return 'missed';
       case native.CallType.rejected:
       case native.CallType.blocked:
-        return 'rejected';
+        return 'hanged_up';
       case native.CallType.outgoing:
       case native.CallType.wifiOutgoing:
-        return durationSeconds > 0 ? 'picked' : 'not_picked';
+        return durationSeconds > 0 ? 'picked' : 'dnp';
       case native.CallType.incoming:
       case native.CallType.wifiIncoming:
         return durationSeconds > 0 ? 'picked' : 'missed';
@@ -247,7 +275,7 @@ class DeviceCallReader {
       case native.CallType.answeredExternally:
       case native.CallType.unknown:
       case null:
-        return durationSeconds > 0 ? 'picked' : 'failed';
+        return durationSeconds > 0 ? 'picked' : 'call_failed';
     }
   }
 }

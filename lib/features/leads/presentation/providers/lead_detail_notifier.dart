@@ -55,21 +55,28 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     return true;
   }
 
-  /// Moves the lead to Connected when an Android call actually connected
-  /// with talk time greater than 2 seconds.
+  /// Moves the lead to Connected after a picked call lasting ≥ 3 seconds.
   ///
-  /// Skips later pipeline stages (Follow-Up, Proposal, Won, Lost) and does
-  /// not invalidate the call-log provider (safe to call during device sync).
+  /// DNP / missed / failed calls do not promote. Skips later pipeline stages
+  /// (Follow-Up, Proposal, Won, Lost). Re-reads the lead from Odoo so a stale
+  /// local stage cannot overwrite Follow-Up.
   Future<bool> autoMoveToConnected(CallLog callEvent) async {
-    if (!ConnectedCallRule.isConnectedConversation(
-      duration: callEvent.duration,
-      status: callEvent.status,
-    )) {
+    if (!ConnectedCallRule.callWasMade(callEvent)) {
       return false;
     }
 
-    final lead = state.valueOrNull ?? await future;
-    if (!ConnectedCallRule.shouldMoveToConnected(lead.stage?.name)) {
+    final repository = ref.read(leadRepositoryProvider);
+    final freshResult = await repository.getLeadDetail(leadId);
+    final lead = freshResult.when(
+      success: (value) => value,
+      failure: (_) => state.valueOrNull,
+    );
+    if (lead == null) {
+      return false;
+    }
+
+    final stageName = lead.stage?.name;
+    if (!ConnectedCallRule.shouldMoveToConnected(stageName)) {
       return false;
     }
 
@@ -78,7 +85,6 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     if (connectedStageId == null) return false;
     if (lead.stage?.id == connectedStageId) return false;
 
-    final repository = ref.read(leadRepositoryProvider);
     final result = await repository.updateStage(
       leadId: leadId,
       stageId: connectedStageId,

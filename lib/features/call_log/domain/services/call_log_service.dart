@@ -153,7 +153,12 @@ class CallLogService {
     return null;
   }
 
-  /// `true` only when last call time is strictly greater than Follow-Up entry.
+  /// `true` when last call time is strictly after Follow-Up entry.
+  ///
+  /// Also allows a short grace window when Call Date is slightly before the
+  /// Follow-Up timestamp: call-log saves bump `write_date`, which is used as a
+  /// Follow-Up proxy when chatter is empty, and CRM dial time is set before
+  /// that save.
   bool _hasCallAfterFollowUp({
     required CallLog callLog,
     required DateTime? followUpEnteredAt,
@@ -161,10 +166,13 @@ class CallLogService {
     final lastCall = callLog.lastCallDate;
     if (lastCall == null || followUpEnteredAt == null) return false;
 
-    // Call Date in lead_properties is local wall-clock (IST).
-    // Chatter stage-change `date` is UTC → converted to local by the resolver.
-    // Compare local wall-clock values so timezone cannot invert the result.
-    return lastCall.toLocal().isAfter(followUpEnteredAt.toLocal());
+    final callLocal = lastCall.toLocal();
+    final followLocal = followUpEnteredAt.toLocal();
+    if (callLocal.isAfter(followLocal)) return true;
+
+    // Dial-at can land a few seconds before write_date used as Follow-Up proxy.
+    final ahead = followLocal.difference(callLocal);
+    return ahead > Duration.zero && ahead <= const Duration(minutes: 2);
   }
 
   /// Loads call log + Follow-up entry time and validates a stage change.

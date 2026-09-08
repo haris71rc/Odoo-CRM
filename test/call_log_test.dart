@@ -307,6 +307,15 @@ void main() {
       expect(parser.resolveTagKey(options, 'call_failed'), 'call_failed');
       expect(parser.resolveTagKey(options, 'not_picked'), 'dnp');
     });
+
+    test('resolveTagKey does not map picked to the first DNP tag', () {
+      const options = [
+        CallStatusOption(key: 'dnp', label: 'DNP'),
+        CallStatusOption(key: 'busy', label: 'Busy'),
+      ];
+
+      expect(parser.resolveTagKey(options, 'picked'), 'picked');
+    });
   });
 
   group('CallLogUpdater', () {
@@ -558,13 +567,34 @@ void main() {
   });
 
   group('ConnectedCallRule', () {
-    test('qualifies only when talk time is more than 2 seconds', () {
+    test('only picked calls lasting ≥ 3s qualify for Connected', () {
       expect(
         ConnectedCallRule.isConnectedConversation(
-          duration: '00:03',
-          status: 'picked',
+          duration: '00:00',
+          status: 'dnp',
         ),
-        isTrue,
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:05',
+          status: 'dnp',
+        ),
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:05',
+          status: 'call_failed',
+        ),
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '00:05',
+          status: 'missed',
+        ),
+        isFalse,
       );
       expect(
         ConnectedCallRule.isConnectedConversation(
@@ -575,50 +605,90 @@ void main() {
       );
       expect(
         ConnectedCallRule.isConnectedConversation(
-          duration: '00:00',
+          duration: '00:03',
           status: 'picked',
+        ),
+        isTrue,
+      );
+      expect(
+        ConnectedCallRule.isConnectedConversation(
+          duration: '01:05',
+          status: 'picked',
+        ),
+        isTrue,
+      );
+      expect(
+        ConnectedCallRule.callWasMade(
+          CallLog(
+            duration: '00:10',
+            status: 'answered',
+            lastCallDate: DateTime(2026, 8, 26, 12),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        ConnectedCallRule.callWasMade(
+          CallLog(status: 'not_picked', totalOutboundCalls: 1),
         ),
         isFalse,
       );
       expect(
-        ConnectedCallRule.isConnectedConversation(
-          duration: '00:01',
-          status: 'picked',
-        ),
+        ConnectedCallRule.callWasMade(const CallLog()),
         isFalse,
       );
     });
 
-    test('rejects missed, DNP, and failed calls even with duration', () {
-      expect(
-        ConnectedCallRule.isConnectedConversation(
-          duration: '00:10',
-          status: 'missed',
-        ),
-        isFalse,
-      );
-      expect(
-        ConnectedCallRule.isConnectedConversation(
-          duration: '00:10',
-          status: 'dnp',
-        ),
-        isFalse,
-      );
-      expect(
-        ConnectedCallRule.isConnectedConversation(
-          duration: '00:10',
-          status: 'not_picked',
-        ),
-        isFalse,
-      );
-      expect(
-        ConnectedCallRule.isConnectedConversation(
-          duration: '00:10',
-          status: 'call_failed',
-        ),
-        isFalse,
-      );
+    test('isPickedStatus rejects DNP / failed and accepts picked variants', () {
+      expect(ConnectedCallRule.isPickedStatus('dnp'), isFalse);
+      expect(ConnectedCallRule.isPickedStatus('not_picked'), isFalse);
+      expect(ConnectedCallRule.isPickedStatus('call_failed'), isFalse);
+      expect(ConnectedCallRule.isPickedStatus('busy'), isFalse);
+      expect(ConnectedCallRule.isPickedStatus('hanged_up'), isFalse);
+      expect(ConnectedCallRule.isPickedStatus('rejected'), isFalse);
+      expect(ConnectedCallRule.isPickedStatus('picked'), isTrue);
+      expect(ConnectedCallRule.isPickedStatus('Picked'), isTrue);
+      expect(ConnectedCallRule.isPickedStatus('answered'), isTrue);
+      expect(ConnectedCallRule.isPickedStatus('call_picked'), isTrue);
     });
+
+    test(
+      'uses totalDuration after Odoo round-trip when only one outbound exists',
+      () {
+        // Parser only persists total duration — latest duration is null on read.
+        expect(
+          ConnectedCallRule.callWasMade(
+            const CallLog(
+              status: 'picked',
+              totalDuration: '00:12',
+              totalOutboundCalls: 1,
+            ),
+          ),
+          isTrue,
+        );
+        expect(
+          ConnectedCallRule.callWasMade(
+            const CallLog(
+              status: 'picked',
+              totalDuration: '00:02',
+              totalOutboundCalls: 1,
+            ),
+          ),
+          isFalse,
+        );
+        // Multi-call totals must not unlock Connected without latest duration.
+        expect(
+          ConnectedCallRule.callWasMade(
+            const CallLog(
+              status: 'picked',
+              totalDuration: '05:00',
+              totalOutboundCalls: 3,
+            ),
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('does not move later pipeline stages back to Connected', () {
       expect(
@@ -638,6 +708,188 @@ void main() {
       expect(ConnectedCallRule.shouldMoveToConnected('Proposal'), isFalse);
       expect(ConnectedCallRule.shouldMoveToConnected('Won'), isFalse);
       expect(ConnectedCallRule.shouldMoveToConnected('Lost'), isFalse);
+    });
+  });
+
+  group('Connected promotion scenarios', () {
+    test('DNP / failed / busy never qualify even with long duration', () {
+      for (final status in [
+        'dnp',
+        'not_picked',
+        'call_failed',
+        'busy',
+        'missed',
+        'hanged_up',
+      ]) {
+        expect(
+          ConnectedCallRule.callWasMade(
+            CallLog(duration: '01:00', status: status),
+          ),
+          isFalse,
+          reason: '$status must not promote',
+        );
+      }
+    });
+
+    test('picked duration boundary: 2s no, 3s yes', () {
+      expect(
+        ConnectedCallRule.callWasMade(
+          const CallLog(duration: '00:02', status: 'picked'),
+        ),
+        isFalse,
+      );
+      expect(
+        ConnectedCallRule.callWasMade(
+          const CallLog(duration: '00:03', status: 'picked'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('manual outcome sheet Picked without duration does not promote', () {
+      // Manual sheet only sets status + lastCallDate (no duration).
+      expect(
+        ConnectedCallRule.callWasMade(
+          CallLog(
+            lastCallDate: DateTime(2026, 8, 27, 12),
+            status: 'picked',
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('OEM late duration: DNP placeholder then dialer overlay unlocks', () {
+      final dialedAt = DateTime(2026, 8, 27, 14, 0, 0);
+      final saved = CallLogUpdater.applyOutboundCall(
+        existing: const CallLog(),
+        callEvent: CallLog(
+          lastCallDate: dialedAt,
+          duration: '00:00',
+          status: 'dnp',
+        ),
+        leadCreatedAt: DateTime(2026, 8, 27, 10),
+      );
+      expect(ConnectedCallRule.callWasMade(saved), isFalse);
+
+      // Simulate Odoo round-trip (latest duration dropped, total kept).
+      final fromOdoo = CallLog(
+        firstCallDate: saved.firstCallDate,
+        lastCallDate: saved.lastCallDate,
+        status: saved.status,
+        totalDuration: saved.totalDuration,
+        totalOutboundCalls: saved.totalOutboundCalls,
+      );
+      expect(ConnectedCallRule.callWasMade(fromOdoo), isFalse);
+
+      final synced = CallLogUpdater.applyDeviceSync(
+        existing: fromOdoo,
+        deviceCalls: [
+          DeviceCallEvent(
+            at: dialedAt.add(const Duration(seconds: 2)),
+            duration: '00:15',
+            status: 'picked',
+            isOutbound: true,
+            isInbound: false,
+          ),
+        ],
+        leadCreatedAt: DateTime(2026, 8, 27, 10),
+      );
+
+      expect(synced.status, 'picked');
+      expect(synced.duration, '00:15');
+      expect(ConnectedCallRule.callWasMade(synced), isTrue);
+      expect(
+        ConnectedCallRule.shouldMoveToConnected('New Prospects'),
+        isTrue,
+      );
+      expect(
+        ConnectedCallRule.shouldMoveToConnected('Follow-Up'),
+        isFalse,
+      );
+    });
+
+    test('short picked call stays off Connected after overlay', () {
+      final dialedAt = DateTime(2026, 8, 27, 15, 0, 0);
+      final saved = CallLogUpdater.applyOutboundCall(
+        existing: const CallLog(),
+        callEvent: CallLog(
+          lastCallDate: dialedAt,
+          duration: '00:01',
+          status: 'picked',
+        ),
+        leadCreatedAt: DateTime(2026, 8, 27, 10),
+      );
+      expect(ConnectedCallRule.callWasMade(saved), isFalse);
+
+      final synced = CallLogUpdater.overlayDialerDetails(
+        existing: saved,
+        event: DeviceCallEvent(
+          at: dialedAt,
+          duration: '00:02',
+          status: 'picked',
+          isOutbound: true,
+          isInbound: false,
+        ),
+      );
+      expect(ConnectedCallRule.callWasMade(synced), isFalse);
+    });
+
+    test('happy path: picked ≥3s on early stage qualifies', () {
+      final log = CallLogUpdater.applyOutboundCall(
+        existing: const CallLog(),
+        callEvent: CallLog(
+          lastCallDate: DateTime(2026, 8, 27, 16, 0),
+          duration: '00:08',
+          status: 'picked',
+        ),
+        leadCreatedAt: DateTime(2026, 8, 27, 9),
+      );
+      expect(ConnectedCallRule.callWasMade(log), isTrue);
+      expect(ConnectedCallRule.shouldMoveToConnected('Do Not Picked'), isTrue);
+    });
+
+    test('picked ≥3s on Follow-Up / Proposal / Won / Lost does not move', () {
+      expect(ConnectedCallRule.callWasMade(
+        const CallLog(duration: '00:20', status: 'picked'),
+      ), isTrue);
+      for (final stage in ['Follow-Up', 'Proposal', 'Won', 'Lost', 'Connected']) {
+        expect(
+          ConnectedCallRule.shouldMoveToConnected(stage),
+          isFalse,
+          reason: stage,
+        );
+      }
+    });
+
+    test('device sync of new external dialer call can unlock Connected', () {
+      final existing = CallLog(
+        firstCallDate: DateTime(2026, 8, 20, 10),
+        lastCallDate: DateTime(2026, 8, 20, 10),
+        duration: '00:00',
+        status: 'dnp',
+        totalDuration: '00:00',
+        totalOutboundCalls: 1,
+      );
+
+      final synced = CallLogUpdater.applyDeviceSync(
+        existing: existing,
+        deviceCalls: [
+          DeviceCallEvent(
+            at: DateTime(2026, 8, 27, 11, 0),
+            duration: '00:45',
+            status: 'picked',
+            isOutbound: true,
+            isInbound: false,
+          ),
+        ],
+        leadCreatedAt: DateTime(2026, 8, 19),
+      );
+
+      expect(synced.totalOutboundCalls, 2);
+      expect(synced.status, 'picked');
+      expect(synced.duration, '00:45');
+      expect(ConnectedCallRule.callWasMade(synced), isTrue);
     });
   });
 
@@ -757,6 +1009,25 @@ void main() {
     );
 
     test(
+      'Rule 2 allows call a few seconds before write_date Follow-Up proxy',
+      () {
+        // Dial at 11:51:00; call-log save bumps write_date proxy to 11:51:30.
+        expect(
+          service.canMoveToStage(
+            callLog: CallLog(
+              lastCallDate: DateTime(2026, 8, 10, 11, 51, 0),
+              status: 'dnp',
+            ),
+            currentStageName: 'Follow-Up',
+            targetStageName: 'Do Not Picked',
+            followUpEnteredAt: DateTime(2026, 8, 10, 11, 51, 30),
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test(
       'Rule 2 allows Follow-Up → Do Not Picked when call is after Follow-Up',
       () {
         final followUpAt = DateTime(2026, 8, 10, 11, 0);
@@ -853,9 +1124,9 @@ void main() {
     });
 
     test(
-      'falls back to write_date when newest stage change is not Follow-Up',
+      'falls back to write_date when no Follow-Up stage change exists',
       () async {
-        // Chatter still shows earlier → New Prospects; lead already in Follow-Up.
+        // Chatter only shows a leave-Follow-Up row (stale); lead is in Follow-Up.
         final messages = [
           ChatterMessageEntity(
             id: 1,
@@ -880,6 +1151,42 @@ void main() {
         expect(at, writeDate.toLocal());
       },
     );
+
+    test('scans past non–Follow-Up rows to find Follow-Up entry', () async {
+      final messages = [
+        ChatterMessageEntity(
+          id: 2,
+          date: DateTime.utc(2026, 8, 10, 7),
+          subtypeDescription: 'Stage changed',
+          trackingValues: const [
+            TrackingValueEntity(
+              changedField: 'Stage',
+              oldValue: 'Follow-Up',
+              newValue: 'New Prospects',
+            ),
+          ],
+        ),
+        ChatterMessageEntity(
+          id: 1,
+          date: DateTime.utc(2026, 8, 10, 6, 21),
+          subtypeDescription: 'Stage changed',
+          trackingValues: const [
+            TrackingValueEntity(
+              changedField: 'Stage',
+              oldValue: 'New Prospects',
+              newValue: 'Follow-Up',
+            ),
+          ],
+        ),
+      ];
+
+      final at = await resolver.resolve(
+        _FakeChatterRepository(messages),
+        1,
+        leadWriteDate: DateTime.utc(2026, 8, 10, 8),
+      );
+      expect(at, DateTime.utc(2026, 8, 10, 6, 21).toLocal());
+    });
   });
 }
 

@@ -51,8 +51,7 @@ bool _hasNewOutboundCall(CallLog before, CallLog after) {
 /// Also syncs dialer-made calls from the Android call log into Odoo so calls
 /// placed outside the CRM Call button still update Call Log / stage rules.
 /// When a new outbound call is synced, auto-assigns the lead to the logged-in
-/// user if they exist and are not already the salesperson, and moves the lead
-/// to Connected when talk time is greater than 2 seconds.
+/// user if needed and moves to Connected only for picked calls lasting ≥ 3s.
 @riverpod
 Future<CallLog> leadCallLog(Ref ref, int leadId) async {
   final service = ref.watch(callLogServiceProvider);
@@ -94,6 +93,7 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
         final detailNotifier =
             ref.read(leadDetailNotifierProvider(leadId).notifier);
         await detailNotifier.autoAssignCaller(currentUser?.id);
+        // Picked + ≥3s → Connected (skips Follow-Up / later stages).
         await detailNotifier.autoMoveToConnected(callLog);
       }
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
@@ -78,6 +80,7 @@ class LeadDetailPage extends HookConsumerWidget {
     final tab = useState(_DetailTab.info);
     final pendingDial = useState<_PendingDial?>(null);
     final isLoggingCall = useState(false);
+    final isCompletingDial = useState(false);
 
     Future<void> showMessage(String message) async {
       if (!context.mounted) return;
@@ -91,98 +94,169 @@ class LeadDetailPage extends HookConsumerWidget {
       await showCallValidationDialog(context, message);
     }
 
-    Future<void> persistCallLog(
-      CallLog callEvent, {
-      bool fromAndroidDevice = false,
-    }) async {
+    Future<void> persistCallLog(CallLog callEvent) async {
       isLoggingCall.value = true;
+      try {
+        final lead = leadAsync.valueOrNull;
+        final result = await ref.read(callLogServiceProvider).recordOutboundCall(
+              leadId: leadId,
+              callEvent: callEvent,
+              leadCreatedAt: lead?.createdDate,
+            );
 
-      final lead = leadAsync.valueOrNull;
-      final result = await ref.read(callLogServiceProvider).recordOutboundCall(
-            leadId: leadId,
-            callEvent: callEvent,
-            leadCreatedAt: lead?.createdDate,
-          );
-      isLoggingCall.value = false;
+        if (result.isFailure) {
+          await showMessage(result.failureOrNull!.message);
+          return;
+        }
 
-      ref.invalidate(leadCallLogProvider(leadId));
+        final assigned = await ref
+            .read(leadDetailNotifierProvider(leadId).notifier)
+            .autoAssignCaller(currentUser?.id);
 
-      if (result.isFailure) {
-        await showMessage(result.failureOrNull!.message);
-        return;
-      }
-
-      final assigned = await ref
-          .read(leadDetailNotifierProvider(leadId).notifier)
-          .autoAssignCaller(currentUser?.id);
-
-      var movedToConnected = false;
-      if (fromAndroidDevice) {
-        movedToConnected = await ref
+        // Picked + duration ≥ 3s → Connected; DNP / failed / short calls skip.
+        final movedToConnected = await ref
             .read(leadDetailNotifierProvider(leadId).notifier)
             .autoMoveToConnected(callEvent);
-      }
 
-      if (movedToConnected) {
-        await showMessage('Call connected — stage set to Connected');
-        return;
+        // Refresh call-log UI after local assign/Connected work finishes.
+        ref.invalidate(leadCallLogProvider(leadId));
+
+        // Dialer may still be writing duration — re-sync so a late picked
+        // row (≥3s) can still promote to Connected.
+        if (!movedToConnected) {
+          Future<void> retryConnected(Duration delay) async {
+            await Future<void>.delayed(delay);
+            if (!context.mounted) return;
+            ref.invalidate(leadCallLogProvider(leadId));
+            try {
+              final synced =
+                  await ref.read(leadCallLogProvider(leadId).future);
+              final moved = await ref
+                  .read(leadDetailNotifierProvider(leadId).notifier)
+                  .autoMoveToConnected(synced);
+              if (moved && context.mounted) {
+                await showMessage('Call connected — stage set to Connected');
+              }
+            } catch (_) {
+              // Best-effort recovery; Sync button / reopen still works.
+            }
+          }
+
+          // Two attempts: OEMs often publish duration ~0.5–3s after hangup.
+          unawaited(retryConnected(const Duration(seconds: 1)));
+          unawaited(retryConnected(const Duration(seconds: 3)));
+        }
+
+        if (movedToConnected) {
+          await showMessage('Call connected — stage set to Connected');
+          return;
+        }
+        await showMessage(
+          assigned ? 'Call saved and assigned to you' : 'Call saved to lead',
+        );
+      } finally {
+        isLoggingCall.value = false;
       }
-      await showMessage(
-        assigned ? 'Call saved and assigned to you' : 'Call saved to lead',
-      );
     }
 
     Future<void> completePendingDial(_PendingDial pending) async {
-      if (isLoggingCall.value) return;
+      if (isLoggingCall.value || isCompletingDial.value) return;
+      // Another resume may already be completing this dial.
+      if (pendingDial.value != pending) return;
+      isCompletingDial.value = true;
 
-      final statusOptions =
-          await ref.read(callStatusOptionsProvider(leadId).future);
-      final reader = ref.read(deviceCallReaderProvider);
-      CallLog? callLog;
-      if (reader.isSupported) {
-        callLog = await reader.findRecentCall(
-          phone: pending.phone,
+      try {
+        final statusOptions =
+            await ref.read(callStatusOptionsProvider(leadId).future);
+        final reader = ref.read(deviceCallReaderProvider);
+        CallLog? callLog;
+        var hasPhonePermission = true;
+        if (reader.isSupported) {
+          hasPhonePermission = await reader.ensurePermission();
+          if (hasPhonePermission) {
+            callLog = await reader.findRecentCall(
+              phone: pending.phone,
+              dialedAt: pending.dialedAt,
+              statusOptions: statusOptions,
+            );
+          }
+        }
+
+        if (!context.mounted) return;
+        // Stale completion after a newer dial — ignore.
+        if (pendingDial.value != pending) return;
+
+        if (callLog != null) {
+          pendingDial.value = null;
+          await persistCallLog(callLog);
+          return;
+        }
+
+        // No dialer row yet: user may still be on the call, or the OEM is slow.
+        // Keep pendingDial and retry a few times without requiring another resume.
+        if (reader.isSupported && hasPhonePermission) {
+          final sinceDial = DateTime.now().difference(pending.dialedAt);
+          if (sinceDial < const Duration(minutes: 3)) {
+            Future<void>.delayed(const Duration(milliseconds: 800), () {
+              if (pendingDial.value == pending) {
+                completePendingDial(pending);
+              }
+            });
+            return;
+          }
+          await showMessage(
+            'Android call log is not ready yet. You can log the outcome manually, '
+            'or tap Sync on the call log / reopen this lead.',
+          );
+        } else if (reader.isSupported && !hasPhonePermission) {
+          await showMessage(
+            'Phone & Call Log permission is required to sync call duration. '
+            'You can log the outcome manually, or enable it in Profile.',
+          );
+        }
+
+        if (!context.mounted) return;
+        if (pendingDial.value != pending) return;
+
+        // Clear before the sheet so a second resume does not open another sheet.
+        pendingDial.value = null;
+        callLog = await showCallOutcomeSheet(
+          context: context,
           dialedAt: pending.dialedAt,
           statusOptions: statusOptions,
         );
+
+        if (callLog == null || !context.mounted) return;
+        await persistCallLog(callLog);
+      } finally {
+        isCompletingDial.value = false;
       }
-
-      if (!context.mounted) return;
-
-      if (callLog != null) {
-        await persistCallLog(
-          callLog,
-          fromAndroidDevice: reader.isSupported,
-        );
-        return;
-      }
-
-      if (reader.isSupported) {
-        await showMessage(
-          'Android call log is not ready yet. Open this lead again to sync duration from the dialer.',
-        );
-        return;
-      }
-
-      callLog = await showCallOutcomeSheet(
-        context: context,
-        dialedAt: pending.dialedAt,
-        statusOptions: statusOptions,
-      );
-
-      if (callLog == null || !context.mounted) return;
-      await persistCallLog(callLog);
     }
 
     useOnAppLifecycleStateChange((previous, current) {
       if (current != AppLifecycleState.resumed) return;
       final pending = pendingDial.value;
       if (pending == null) return;
-      pendingDial.value = null;
+
+      final sinceDial = DateTime.now().difference(pending.dialedAt);
+      // Ignore resume flicker right after launching the dialer, but schedule
+      // completion when the window ends so short DNP / reject still syncs.
+      if (sinceDial < const Duration(seconds: 3)) {
+        final wait = const Duration(seconds: 3) - sinceDial;
+        Future<void>.delayed(wait, () {
+          if (pendingDial.value == pending) {
+            completePendingDial(pending);
+          }
+        });
+        return;
+      }
+      // Keep pendingDial until completePendingDial succeeds or falls back.
       Future.microtask(() => completePendingDial(pending));
     });
 
     Future<void> callCustomer(LeadDetailEntity lead) async {
+      if (isLoggingCall.value || pendingDial.value != null) return;
+
       final number = lead.phone ?? lead.mobile;
       if (number == null || number.isEmpty) {
         await showMessage('No phone number available');
@@ -191,7 +265,14 @@ class LeadDetailPage extends HookConsumerWidget {
 
       final reader = ref.read(deviceCallReaderProvider);
       if (reader.isSupported) {
-        await reader.ensurePermission();
+        final granted = await reader.ensurePermission();
+        if (!granted) {
+          await showMessage(
+            'Phone & Call Log permission is needed to save call duration '
+            'and move connected calls to Connected. Enable it in Profile.',
+          );
+          // Still allow dialing; reopen sync / manual sheet can recover later.
+        }
       }
 
       final dialedAt = DateTime.now();
@@ -831,7 +912,10 @@ class LeadDetailPage extends HookConsumerWidget {
                       : SizedBox(
                           height: 54,
                           child: FilledButton.icon(
-                            onPressed: isActing.value
+                            onPressed: isActing.value ||
+                                    isLoggingCall.value ||
+                                    isCompletingDial.value ||
+                                    pendingDial.value != null
                                 ? null
                                 : () => callCustomer(lead),
                             style: FilledButton.styleFrom(

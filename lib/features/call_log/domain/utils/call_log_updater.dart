@@ -217,6 +217,12 @@ class CallLogUpdater {
       nextTotal = storedTotal + nextLatest;
     } else if (existing.duration == null && storedTotal == 0) {
       nextTotal = nextLatest;
+    } else if (existing.duration == null &&
+        deviceSeconds > 0 &&
+        (existing.totalOutboundCalls ?? 0) <= 1) {
+      // Odoo round-trip dropped latest duration; single-call total is the
+      // latest talk time from the dialer.
+      nextTotal = nextLatest;
     } else if (existing.duration != null && deviceSeconds > storedLatest) {
       nextTotal = storedTotal - storedLatest + deviceSeconds;
     }

@@ -9,8 +9,8 @@ class FollowUpStageResolver {
 
   /// Returns the local wall-clock time the lead entered the *current* Follow-Up.
   ///
-  /// [leadWriteDate] is used when the lead is in Follow-Up but chatter has not
-  /// yet returned the newest stage-change (common right after moving in).
+  /// [leadWriteDate] is used only when chatter has no Follow-Up stage-change
+  /// (common right after moving in, before tracking appears).
   Future<DateTime?> resolve(
     ChatterRepository chatterRepository,
     int leadId, {
@@ -30,7 +30,8 @@ class FollowUpStageResolver {
     List<ChatterMessageEntity> messages, {
     DateTime? leadWriteDate,
   }) {
-    // Messages are newest-first. Walk stage changes to find the current visit.
+    // Messages are newest-first. Prefer the newest Follow-Up *entry*, even if
+    // newer non–Follow-Up tracking rows exist (stale chatter / other fields).
     for (final message in messages) {
       final newStage = _stageNewValue(message);
       if (newStage == null) continue;
@@ -38,13 +39,9 @@ class FollowUpStageResolver {
       if (LeadListFilters.isFollowUp(newStage)) {
         return message.date?.toLocal() ?? leadWriteDate?.toLocal();
       }
-
-      // Newest stage change is away from Follow-Up. If we are validating while
-      // still in Follow-Up, chatter is stale — fall back to lead write_date.
-      return leadWriteDate?.toLocal();
     }
 
-    // No stage tracking found.
+    // No Follow-Up stage tracking found — last resort for a brand-new move.
     return leadWriteDate?.toLocal();
   }
 
