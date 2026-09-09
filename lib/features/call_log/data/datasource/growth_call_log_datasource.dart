@@ -89,10 +89,17 @@ class GrowthCallLogDatasource {
     final message = _extractMessage(data) ??
         switch (statusCode) {
           401 => 'Session expired',
+          403 => 'Forbidden',
           404 => 'Lead or tenant not found',
+          408 => 'Request timeout',
           422 => 'Malformed call log payload',
+          429 => 'Too many requests',
+          500 => 'Internal server error',
           502 => 'Odoo unreachable',
-          _ => 'Growth API request failed${statusCode != null ? ' ($statusCode)' : ''}',
+          503 => 'Service unavailable',
+          504 => 'Gateway timeout',
+          _ =>
+            'Growth API request failed${statusCode != null ? ' ($statusCode)' : ''}',
         };
 
     if (statusCode == 401) {

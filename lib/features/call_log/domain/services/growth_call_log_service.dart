@@ -10,12 +10,21 @@ import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/entities/growth_call_log_request.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_duration.dart';
 import 'package:odoocrm/features/call_log/domain/utils/growth_call_id.dart';
+import 'package:odoocrm/features/call_log/domain/utils/growth_call_retry_policy.dart';
 
 /// Production Growth BI writer: durable outbox + stable idempotency keys.
 ///
-/// - Persists each call before POST (survives kill / offline / 502 / 401).
-/// - Reuses `call_id` across CRM dial + device sync within the duplicate window.
-/// - Drains the outbox in the background; [flushPending] after login / cold start.
+/// Flow:
+/// 1. Persist the full POST payload locally (outbox) before / while posting.
+/// 2. POST `/api/v1/calls/log`.
+/// 3. On success → remove from outbox (mark acked).
+/// 4. On retryable failure → keep pending; retry on next drain / app launch.
+/// 5. On permanent client error → dead-letter (still persisted, not retried).
+///
+/// Duplicate protection relies on deterministic `call_id` (UUID v5). If the
+/// server already accepted a call but the client never saw the response, the
+/// retry reuses the same `call_id`; the API may return `duplicate: true`.
+/// Exactly-once delivery cannot be guaranteed by the client alone.
 class GrowthCallLogService {
   GrowthCallLogService({
     required GrowthCallLogDatasource datasource,
@@ -29,11 +38,13 @@ class GrowthCallLogService {
   final SecureStorageService _secureStorage;
   final GrowthCallOutbox _outbox;
 
-  /// Soft cap on transient retries before backing off in the outbox.
-  static const maxDrainAttempts = 8;
+  /// Soft cap used only to bound in-session backoff growth — never deletes
+  /// retryable items from the durable queue.
+  static const maxBackoffAttempt = 8;
 
   Future<void>? _drainFuture;
   var _drainRequested = false;
+  Timer? _retryTimer;
 
   /// Enqueues an outbound call and kicks a background drain.
   ///
@@ -71,7 +82,7 @@ class GrowthCallLogService {
   }) async {
     try {
       if (leadId <= 0) {
-        _log('skip invalid lead_id=$leadId');
+        _log('CallLogUpload: skip invalid lead_id=$leadId');
         return;
       }
 
@@ -86,7 +97,10 @@ class GrowthCallLogService {
             ack.direction == normalizedDirection &&
             ack.callAt.toUtc().difference(callAt.toUtc()).abs() <=
                 GrowthCallId.dedupeWindow) {
-          _log('skip already-acked call_id=${ack.callId} lead_id=$leadId');
+          _log(
+            'CallLogRetryQueue: skip already-acked call_id=${ack.callId} '
+            'lead_id=$leadId',
+          );
           return;
         }
       }
@@ -135,7 +149,7 @@ class GrowthCallLogService {
       );
 
       if (!_isValidPayload(request)) {
-        _log('skip invalid payload call_id=$callId');
+        _log('CallLogUpload: skip invalid payload call_id=$callId');
         return;
       }
 
@@ -144,21 +158,33 @@ class GrowthCallLogService {
           request: request,
           attempts: 0,
           enqueuedAt: now,
+          status: GrowthOutboxStatus.pending,
         ),
       );
-      _log('enqueued call_id=$callId lead_id=$leadId status=$status');
+      _log('CallLogRetryQueue: Added call $callId lead_id=$leadId');
       unawaited(flushPending());
     } catch (e, st) {
-      _log('enqueue failed error=$e\n$st');
+      _log('CallLogRetryQueue: enqueue failed error=$e\n$st');
     }
   }
 
   /// Drains the durable outbox with the latest Odoo `session_id`.
+  ///
+  /// Safe to call concurrently — only one drain runs at a time; extra calls
+  /// coalesce into a follow-up pass.
   Future<void> flushPending() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _drainRequested = true;
     return _drainFuture ??= _drainLoop().whenComplete(() {
       _drainFuture = null;
     });
+  }
+
+  /// Cancels in-session backoff wakeups (e.g. tests / logout).
+  void dispose() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
   }
 
   Future<void> _drainLoop() async {
@@ -166,6 +192,8 @@ class GrowthCallLogService {
       _drainRequested = false;
       await _drainOnce();
     } while (_drainRequested);
+    await _scheduleWakeForBackoff();
+    _log('CallLogRetryQueue: Queue processing completed');
   }
 
   Future<void> _drainOnce() async {
@@ -182,53 +210,97 @@ class GrowthCallLogService {
       }
 
       if (sessionId == null || sessionId.isEmpty) {
-        _log('drain paused — no session_id (call_id=${item.callId})');
+        _log(
+          'CallLogRetryQueue: drain paused — no session_id '
+          '(call_id=${item.callId})',
+        );
         return;
       }
 
       final request = item.request.copyWith(sessionId: sessionId);
+      _log('CallLogRetryQueue: Processing ${item.callId}');
+      _log('CallLogUpload: POST started call_id=${item.callId}');
+
+      await _outbox.update(
+        item.copyWith(
+          request: request,
+          status: GrowthOutboxStatus.processing,
+          lastAttemptAt: now,
+        ),
+      );
+
       try {
         final result = await _datasource.logCall(request);
+        // Delete from queue only after the API confirms success.
         await _outbox.markAcked(item.copyWith(request: request));
         _log(
-          'posted call_id=${request.callId} '
+          'CallLogUpload: POST succeeded call_id=${request.callId} '
           'duplicate=${result['duplicate']} '
           'odoo_write_status=${result['odoo_write_status']}',
         );
+        _log('CallLogRetryQueue: Retry succeeded for ${item.callId}');
       } on AuthFailure catch (e) {
-        // Keep in outbox — flush again after the user re-authenticates.
+        // 401: do not infinite-retry. Keep pending until re-login flush.
         await _outbox.update(
           item.copyWith(
             request: request,
             attempts: item.attempts + 1,
             lastError: e.message,
+            lastAttemptAt: now,
             nextAttemptAt: now.add(const Duration(seconds: 30)),
+            status: GrowthOutboxStatus.failed,
           ),
         );
-        _log('401 session expired call_id=${item.callId} — waiting for re-login');
+        _log(
+          'CallLogUpload: POST failed with status 401 call_id=${item.callId} '
+          '— waiting for re-login',
+        );
+        _log('CallLogRetryQueue: Retry failed for ${item.callId}');
         return;
       } on NetworkFailure catch (e) {
+        _log(
+          'CallLogUpload: POST failed with network error '
+          'call_id=${item.callId}',
+        );
         await _scheduleRetry(item, request, e.message, now);
+        _log('CallLogRetryQueue: Retryable failure, saving to queue');
+        // Global connectivity problem — leave remaining items pending.
+        return;
       } on ApiFailure catch (e) {
-        if (e.statusCode == 502) {
+        _log(
+          'CallLogUpload: POST failed with status ${e.statusCode} '
+          'call_id=${item.callId}',
+        );
+        if (GrowthCallRetryPolicy.isRetryableStatus(e.statusCode)) {
           await _scheduleRetry(item, request, e.message, now);
+          _log(
+            'CallLogRetryQueue: Retryable failure, saving to queue '
+            'status=${e.statusCode}',
+          );
+          if (GrowthCallRetryPolicy.isGlobalTransientStatus(e.statusCode)) {
+            return;
+          }
           continue;
         }
-        // 404 / 422 / other: do not spin forever.
+        // Permanent / client errors — dead-letter, continue other items.
         await _outbox.markDead(
           item.copyWith(
             request: request,
             attempts: item.attempts + 1,
             lastError: '${e.statusCode}: ${e.message}',
+            lastAttemptAt: now,
+            status: GrowthOutboxStatus.failed,
             deadLetter: true,
           ),
         );
         _log(
-          'dead-letter call_id=${item.callId} '
-          'status=${e.statusCode} message=${e.message}',
+          'CallLogRetryQueue: dead-letter call_id=${item.callId} '
+          'status=${e.statusCode}',
         );
       } catch (e) {
+        _log('CallLogUpload: POST failed unexpected error call_id=${item.callId}');
         await _scheduleRetry(item, request, e.toString(), now);
+        _log('CallLogRetryQueue: Retryable failure, saving to queue');
       }
     }
   }
@@ -240,32 +312,58 @@ class GrowthCallLogService {
     DateTime now,
   ) async {
     final attempts = item.attempts + 1;
-    if (attempts >= maxDrainAttempts) {
-      await _outbox.markDead(
-        item.copyWith(
-          request: request,
-          attempts: attempts,
-          lastError: error,
-          deadLetter: true,
-        ),
-      );
-      _log('dead-letter after $attempts attempts call_id=${item.callId}');
-      return;
-    }
-
-    final delay = Duration(seconds: (1 << (attempts - 1)).clamp(1, 60));
+    // Never delete retryable call logs for attempt count — only back off.
+    final delay = GrowthCallRetryPolicy.backoffDelay(attempts);
     await _outbox.update(
       item.copyWith(
         request: request,
         attempts: attempts,
         lastError: error,
+        lastAttemptAt: now,
         nextAttemptAt: now.add(delay),
+        status: GrowthOutboxStatus.failed,
+        deadLetter: false,
       ),
     );
     _log(
-      'retry scheduled call_id=${item.callId} attempt=$attempts '
-      'in ${delay.inSeconds}s',
+      'CallLogRetryQueue: Retry failed for ${item.callId} attempt=$attempts '
+      'next_in=${delay.inSeconds}s',
     );
+    if (attempts >= maxBackoffAttempt) {
+      _log(
+        'CallLogRetryQueue: high attempt count for ${item.callId} '
+        '($attempts) — still kept for next app launch',
+      );
+    }
+  }
+
+  /// Wakes the drain when the soonest [GrowthOutboxItem.nextAttemptAt] is due.
+  Future<void> _scheduleWakeForBackoff() async {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+
+    final pending = await _outbox.loadPending();
+    final now = DateTime.now().toUtc();
+    DateTime? soonest;
+    for (final item in pending) {
+      if (item.deadLetter) continue;
+      final next = item.nextAttemptAt;
+      if (next == null) continue;
+      if (!next.isAfter(now)) {
+        // Already due — kick another drain without waiting.
+        unawaited(flushPending());
+        return;
+      }
+      if (soonest == null || next.isBefore(soonest)) {
+        soonest = next;
+      }
+    }
+    if (soonest == null) return;
+
+    final wait = soonest.difference(now) + const Duration(milliseconds: 50);
+    _retryTimer = Timer(wait, () {
+      unawaited(flushPending());
+    });
   }
 
   Future<({List<GrowthOutboxItem> pending, List<GrowthAckedCall> acked})>
@@ -301,6 +399,6 @@ class GrowthCallLogService {
   }
 
   void _log(String message) {
-    debugPrint('GrowthCallLog: $message');
+    debugPrint(message);
   }
 }

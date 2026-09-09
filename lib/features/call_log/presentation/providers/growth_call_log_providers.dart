@@ -10,9 +10,11 @@ part 'growth_call_log_providers.g.dart';
 @Riverpod(keepAlive: true)
 GrowthCallLogService growthCallLogService(Ref ref) {
   final secureStorage = ref.watch(secureStorageServiceProvider);
-  return GrowthCallLogService(
+  final service = GrowthCallLogService(
     datasource: GrowthCallLogDatasource(),
     secureStorage: secureStorage,
     outbox: GrowthCallOutbox(secureStorage),
   );
+  ref.onDispose(service.dispose);
+  return service;
 }

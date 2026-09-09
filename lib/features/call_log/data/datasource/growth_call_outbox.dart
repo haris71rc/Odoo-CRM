@@ -4,14 +4,26 @@ import 'package:odoocrm/core/constants/app_constants.dart';
 import 'package:odoocrm/core/storage/secure_storage_service.dart';
 import 'package:odoocrm/features/call_log/domain/entities/growth_call_log_request.dart';
 
+/// Queue status for a pending Growth POST.
+enum GrowthOutboxStatus {
+  pending,
+  processing,
+  failed,
+}
+
 /// One pending Growth POST kept until the API accepts it (incl. duplicates).
+///
+/// [callId] is the idempotency key sent to the API. Local identity is the same
+/// key so upserts merge CRM dial + device sync into one queue row.
 class GrowthOutboxItem {
   const GrowthOutboxItem({
     required this.request,
     required this.attempts,
     required this.enqueuedAt,
     this.lastError,
+    this.lastAttemptAt,
     this.nextAttemptAt,
+    this.status = GrowthOutboxStatus.pending,
     this.deadLetter = false,
   });
 
@@ -19,28 +31,39 @@ class GrowthOutboxItem {
   final int attempts;
   final DateTime enqueuedAt;
   final String? lastError;
+  final DateTime? lastAttemptAt;
   final DateTime? nextAttemptAt;
+  final GrowthOutboxStatus status;
   final bool deadLetter;
 
   String get callId => request.callId;
+
+  /// Local queue id — same as [callId] (API idempotency key).
+  String get queueId => callId;
 
   GrowthOutboxItem copyWith({
     GrowthCallLogRequest? request,
     int? attempts,
     DateTime? enqueuedAt,
     String? lastError,
+    DateTime? lastAttemptAt,
     DateTime? nextAttemptAt,
+    GrowthOutboxStatus? status,
     bool? deadLetter,
     bool clearNextAttempt = false,
     bool clearLastError = false,
+    bool clearLastAttempt = false,
   }) {
     return GrowthOutboxItem(
       request: request ?? this.request,
       attempts: attempts ?? this.attempts,
       enqueuedAt: enqueuedAt ?? this.enqueuedAt,
       lastError: clearLastError ? null : (lastError ?? this.lastError),
+      lastAttemptAt:
+          clearLastAttempt ? null : (lastAttemptAt ?? this.lastAttemptAt),
       nextAttemptAt:
           clearNextAttempt ? null : (nextAttemptAt ?? this.nextAttemptAt),
+      status: status ?? this.status,
       deadLetter: deadLetter ?? this.deadLetter,
     );
   }
@@ -50,8 +73,11 @@ class GrowthOutboxItem {
         'attempts': attempts,
         'enqueued_at': enqueuedAt.toUtc().toIso8601String(),
         if (lastError != null) 'last_error': lastError,
+        if (lastAttemptAt != null)
+          'last_attempt_at': lastAttemptAt!.toUtc().toIso8601String(),
         if (nextAttemptAt != null)
           'next_attempt_at': nextAttemptAt!.toUtc().toIso8601String(),
+        'status': status.name,
         'dead_letter': deadLetter,
       };
 
@@ -63,11 +89,23 @@ class GrowthOutboxItem {
       enqueuedAt: DateTime.tryParse(json['enqueued_at'] as String? ?? '') ??
           DateTime.now().toUtc(),
       lastError: json['last_error'] as String?,
+      lastAttemptAt: json['last_attempt_at'] is String
+          ? DateTime.tryParse(json['last_attempt_at'] as String)
+          : null,
       nextAttemptAt: json['next_attempt_at'] is String
           ? DateTime.tryParse(json['next_attempt_at'] as String)
           : null,
+      status: _statusFrom(json['status'] as String?),
       deadLetter: json['dead_letter'] == true,
     );
+  }
+
+  static GrowthOutboxStatus _statusFrom(String? raw) {
+    return switch (raw) {
+      'processing' => GrowthOutboxStatus.processing,
+      'failed' => GrowthOutboxStatus.failed,
+      _ => GrowthOutboxStatus.pending,
+    };
   }
 }
 
@@ -224,6 +262,7 @@ class GrowthCallOutbox {
             : a.salesperson,
       ),
       // Keep attempts from the older entry so retries continue.
+      status: GrowthOutboxStatus.pending,
       clearNextAttempt: true,
       clearLastError: true,
       deadLetter: false,
