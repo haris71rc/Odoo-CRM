@@ -23,7 +23,7 @@ final userRepositoryProvider = Provider<UserRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef UserRepositoryRef = ProviderRef<UserRepository>;
-String _$usersNotifierHash() => r'b58c64c5a0b403466d7cea5d16dab96587ad4054';
+String _$usersNotifierHash() => r'b82bb93f9d580d108698786e9696fddde2d537ed';
 
 /// Loads internal users once and keeps them cached.
 ///

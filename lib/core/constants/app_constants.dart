@@ -14,4 +14,7 @@ class AppConstants {
   static const String uidKey = 'uid';
   static const String userLoginKey = 'user_login';
   static const String tenantKey = 'app_tenant';
+
+  /// Durable Growth `/api/v1/calls/log` outbox (pending + recent acks).
+  static const String growthCallOutboxKey = 'growth_call_outbox_v1';
 }

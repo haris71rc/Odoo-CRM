@@ -9,6 +9,7 @@ import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dar
 import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/services/call_log_service.dart';
+import 'package:odoocrm/features/call_log/presentation/providers/growth_call_log_providers.dart';
 import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifier.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -30,6 +31,7 @@ CallLogService callLogService(Ref ref) {
   return CallLogService(
     repository: ref.watch(callLogRepositoryProvider),
     chatterRepository: ref.watch(chatterRepositoryProvider),
+    growthCallLogService: ref.watch(growthCallLogServiceProvider),
   );
 }
 
@@ -80,16 +82,17 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
     }
 
     final previous = callLog;
+    final currentUser = ref.read(authNotifierProvider).valueOrNull;
     final syncResult = await service.syncFromDevice(
       leadId: leadId,
       deviceCalls: deviceCalls,
       leadCreatedAt: lead.createdDate,
+      salesperson: currentUser?.name,
     );
 
     if (syncResult.isSuccess) {
       callLog = syncResult.valueOrNull ?? callLog;
       if (_hasNewOutboundCall(previous, callLog)) {
-        final currentUser = ref.read(authNotifierProvider).valueOrNull;
         final detailNotifier =
             ref.read(leadDetailNotifierProvider(leadId).notifier);
         await detailNotifier.autoAssignCaller(currentUser?.id);

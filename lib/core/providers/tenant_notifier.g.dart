@@ -6,7 +6,7 @@ part of 'tenant_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$tenantNotifierHash() => r'a56f9e4dd95dd6de4a35004425fc03241843d3cc';
+String _$tenantNotifierHash() => r'e1b933d63bba69048ee2dace141dba2953ceb9c4';
 
 /// See also [TenantNotifier].
 @ProviderFor(TenantNotifier)

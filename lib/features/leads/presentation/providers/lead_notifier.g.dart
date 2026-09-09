@@ -40,7 +40,7 @@ final leadFilterNotifierProvider =
     );
 
 typedef _$LeadFilterNotifier = Notifier<LeadFilterState>;
-String _$leadNotifierHash() => r'16f7a4d35ff1750d84bfaf5f2ddc0b8b7e750123';
+String _$leadNotifierHash() => r'b5a5113d2fa7ce910578e61e8b9e28a6861cd2c1';
 
 /// See also [LeadNotifier].
 @ProviderFor(LeadNotifier)

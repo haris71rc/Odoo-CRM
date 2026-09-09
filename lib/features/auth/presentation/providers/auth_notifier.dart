@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/constants/app_tenant.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
@@ -6,6 +8,7 @@ import 'package:odoocrm/features/auth/data/datasource/auth_remote_datasource.dar
 import 'package:odoocrm/features/auth/data/repository/auth_repository_impl.dart';
 import 'package:odoocrm/features/auth/domain/entities/user_entity.dart';
 import 'package:odoocrm/features/auth/domain/repository/auth_repository.dart';
+import 'package:odoocrm/features/call_log/presentation/providers/growth_call_log_providers.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'auth_notifier.g.dart';
@@ -33,7 +36,12 @@ class AuthNotifier extends _$AuthNotifier {
     if (!isAuthenticated) return null;
 
     final userResult = await repository.getCurrentUser();
-    return userResult.valueOrNull;
+    final user = userResult.valueOrNull;
+    if (user != null) {
+      // Replay Growth calls that failed while offline / session-expired.
+      unawaited(ref.read(growthCallLogServiceProvider).flushPending());
+    }
+    return user;
   }
 
   Future<String?> login({
@@ -63,6 +71,7 @@ class AuthNotifier extends _$AuthNotifier {
     }
 
     state = AsyncData(userResult.valueOrNull);
+    unawaited(ref.read(growthCallLogServiceProvider).flushPending());
     return null;
   }
 

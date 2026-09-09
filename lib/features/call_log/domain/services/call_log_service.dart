@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:odoocrm/core/error/result.dart';
 import 'package:odoocrm/features/call_log/data/services/follow_up_stage_resolver.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dart';
 import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
+import 'package:odoocrm/features/call_log/domain/services/growth_call_log_service.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_updater.dart';
 import 'package:odoocrm/features/chatter/domain/repository/chatter_repository.dart';
 import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
@@ -13,13 +16,16 @@ class CallLogService {
   CallLogService({
     required CallLogRepository repository,
     required ChatterRepository chatterRepository,
+    GrowthCallLogService? growthCallLogService,
     FollowUpStageResolver followUpResolver = const FollowUpStageResolver(),
   })  : _repository = repository,
         _chatterRepository = chatterRepository,
+        _growthCallLogService = growthCallLogService,
         _followUpResolver = followUpResolver;
 
   final CallLogRepository _repository;
   final ChatterRepository _chatterRepository;
+  final GrowthCallLogService? _growthCallLogService;
   final FollowUpStageResolver _followUpResolver;
 
   static const rule1Message =
@@ -44,10 +50,13 @@ class CallLogService {
   }
 
   /// Merges an outbound call event into existing properties and saves.
+  ///
+  /// On success, also posts to Growth BI (`/api/v1/calls/log`) best-effort.
   Future<Result<void>> recordOutboundCall({
     required int leadId,
     required CallLog callEvent,
     required DateTime? leadCreatedAt,
+    String? salesperson,
   }) async {
     final existingResult = await getCallLog(leadId);
     if (existingResult.isFailure) {
@@ -63,7 +72,15 @@ class CallLogService {
       leadCreatedAt: leadCreatedAt,
     );
 
-    return saveCallLog(leadId: leadId, callLog: merged);
+    final saveResult = await saveCallLog(leadId: leadId, callLog: merged);
+    if (saveResult.isSuccess) {
+      _enqueueGrowthOutbound(
+        leadId: leadId,
+        callEvent: callEvent,
+        salesperson: salesperson,
+      );
+    }
+    return saveResult;
   }
 
   /// Syncs inbound call count from the device when it exceeds stored value.
@@ -94,10 +111,12 @@ class CallLogService {
   ///
   /// Only outbound calls newer than the stored last call (outside the
   /// duplicate window) are applied. Inbound totals are raised to match device.
+  /// Newly applied outbound events are also posted to Growth BI.
   Future<Result<CallLog>> syncFromDevice({
     required int leadId,
     required List<DeviceCallEvent> deviceCalls,
     required DateTime? leadCreatedAt,
+    String? salesperson,
   }) async {
     final existingResult = await getCallLog(leadId);
     if (existingResult.isFailure) {
@@ -105,6 +124,11 @@ class CallLogService {
     }
 
     final existing = existingResult.valueOrNull ?? const CallLog();
+    final newOutbound = _collectNewOutboundEvents(
+      existing: existing,
+      deviceCalls: deviceCalls,
+    );
+
     final synced = CallLogUpdater.applyDeviceSync(
       existing: existing,
       deviceCalls: deviceCalls,
@@ -114,9 +138,74 @@ class CallLogService {
     if (CallLogUpdater.metricsChanged(existing, synced)) {
       final saveResult = await saveCallLog(leadId: leadId, callLog: synced);
       if (saveResult.isFailure) return Error(saveResult.failureOrNull!);
+
+      for (final event in newOutbound) {
+        _enqueueGrowthOutbound(
+          leadId: leadId,
+          callEvent: CallLog(
+            lastCallDate: event.at,
+            duration: event.duration,
+            status: event.status,
+          ),
+          salesperson: salesperson,
+        );
+      }
     }
 
     return Success(synced);
+  }
+
+  /// Same sequential rules as [CallLogUpdater.applyDeviceSync] for outbound.
+  List<DeviceCallEvent> _collectNewOutboundEvents({
+    required CallLog existing,
+    required List<DeviceCallEvent> deviceCalls,
+  }) {
+    var current = existing;
+    final applied = <DeviceCallEvent>[];
+    final outbound = deviceCalls.where((e) => e.isOutbound).toList()
+      ..sort((a, b) => a.at.compareTo(b.at));
+
+    for (final event in outbound) {
+      if (!CallLogUpdater.shouldApplyDeviceOutbound(
+        deviceAt: event.at,
+        lastCallDate: current.lastCallDate,
+        firstCallDate: current.firstCallDate,
+      )) {
+        current = CallLogUpdater.overlayDialerDetails(
+          existing: current,
+          event: event,
+        );
+        continue;
+      }
+      applied.add(event);
+      current = CallLogUpdater.applyOutboundCall(
+        existing: current,
+        callEvent: CallLog(
+          lastCallDate: event.at,
+          duration: event.duration,
+          status: event.status,
+        ),
+        leadCreatedAt: null,
+      );
+    }
+    return applied;
+  }
+
+  void _enqueueGrowthOutbound({
+    required int leadId,
+    required CallLog callEvent,
+    String? salesperson,
+  }) {
+    final growth = _growthCallLogService;
+    if (growth == null) return;
+    // Local outbox write + background drain (HTTP is not awaited).
+    unawaited(
+      growth.enqueueOutboundCall(
+        leadId: leadId,
+        callEvent: callEvent,
+        salesperson: salesperson,
+      ),
+    );
   }
 
   /// Returns an error message when the transition is blocked, otherwise null.

@@ -102,6 +102,7 @@ class LeadDetailPage extends HookConsumerWidget {
               leadId: leadId,
               callEvent: callEvent,
               leadCreatedAt: lead?.createdDate,
+              salesperson: currentUser?.name,
             );
 
         if (result.isFailure) {

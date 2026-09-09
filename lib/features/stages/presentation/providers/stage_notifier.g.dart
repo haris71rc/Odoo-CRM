@@ -23,7 +23,7 @@ final stageRepositoryProvider = Provider<StageRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef StageRepositoryRef = ProviderRef<StageRepository>;
-String _$stageNotifierHash() => r'002c86e3b05f6a2f2a4ec21e1329e09c3510f080';
+String _$stageNotifierHash() => r'0403f4ca3403f3c336d84b86ee15c8463af7b9e5';
 
 /// See also [StageNotifier].
 @ProviderFor(StageNotifier)

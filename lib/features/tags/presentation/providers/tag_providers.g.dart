@@ -24,7 +24,7 @@ final tagRepositoryProvider = Provider<TagRepository>.internal(
 // ignore: unused_element
 typedef TagRepositoryRef = ProviderRef<TagRepository>;
 String _$leadTemperatureTagsNotifierHash() =>
-    r'af6a7caf145c076e35ca93ca0073950283347b7f';
+    r'89822e1800b7d4d613a62ff336584ca5e80c30be';
 
 /// Cached HOT_LEAD / WARM_LEAD tags from Odoo (by name → id).
 ///
