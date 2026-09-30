@@ -59,6 +59,7 @@ class LeadRemoteDatasource {
     int? excludePaidAdminId,
     List<int> excludePaidStageIds = const [],
     List<int> tagIds = const [],
+    List<int> dateExemptStageIds = const [],
   }) async {
     final extra = <List<dynamic>>[];
 
@@ -68,21 +69,6 @@ class LeadRemoteDatasource {
 
     if (stageId != null) {
       extra.add(['stage_id', '=', stageId]);
-    }
-
-    if (startDate != null) {
-      extra.add(['create_date', '>=', DateFormatters.toApiDate(startDate)]);
-    }
-    if (endDate != null) {
-      final endOfDay = DateTime(
-        endDate.year,
-        endDate.month,
-        endDate.day,
-        23,
-        59,
-        59,
-      );
-      extra.add(['create_date', '<=', DateFormatters.toApiDate(endOfDay)]);
     }
 
     // // High priority temporarily disabled.
@@ -109,6 +95,11 @@ class LeadRemoteDatasource {
     // Odoo polish: NOT (user_id = admin AND stage_id in won/lost).
     final domain = <dynamic>[
       ...AppEnvironment.mergeDomain(extra),
+      ..._createDateDomain(
+        startDate: startDate,
+        endDate: endDate,
+        dateExemptStageIds: dateExemptStageIds,
+      ),
       if (excludePaidAdminId != null && excludePaidStageIds.isNotEmpty) ...[
         '!',
         '&',
@@ -143,6 +134,41 @@ class LeadRemoteDatasource {
     return result
         .map((item) => LeadDto.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
+  }
+
+  /// Create-date clause. Follow-up stages are OR'd in so that section is not
+  /// limited by the selected date range.
+  static List<dynamic> _createDateDomain({
+    DateTime? startDate,
+    DateTime? endDate,
+    List<int> dateExemptStageIds = const [],
+  }) {
+    if (startDate == null && endDate == null) return const [];
+
+    final parts = <dynamic>[];
+    if (startDate != null && endDate != null) parts.add('&');
+    if (startDate != null) {
+      parts.add(['create_date', '>=', DateFormatters.toApiDate(startDate)]);
+    }
+    if (endDate != null) {
+      final endOfDay = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+        23,
+        59,
+        59,
+      );
+      parts.add(['create_date', '<=', DateFormatters.toApiDate(endOfDay)]);
+    }
+
+    if (dateExemptStageIds.isEmpty) return parts;
+
+    return [
+      '|',
+      ...parts,
+      ['stage_id', 'in', dateExemptStageIds],
+    ];
   }
 
   Future<LeadDetailDto> read(int leadId) async {

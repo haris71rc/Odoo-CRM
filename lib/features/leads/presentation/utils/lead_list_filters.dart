@@ -1,4 +1,5 @@
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
+import 'package:odoocrm/features/leads/domain/utils/lead_date_range.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/stages/domain/entities/stage_entity.dart';
 import 'package:odoocrm/features/users/domain/entities/user_entity.dart';
@@ -41,10 +42,7 @@ class LeadListFilters {
   /// Won + Lost stage ids used when excluding Paid leads.
   static List<int> findWonOrLostStageIds(Iterable<StageEntity> stages) {
     return stages
-        .where(
-          (s) =>
-              s.isWon == true || isWon(s.name) || isLost(s.name),
-        )
+        .where((s) => s.isWon == true || isWon(s.name) || isLost(s.name))
         .map((s) => s.id)
         .toList();
   }
@@ -52,6 +50,31 @@ class LeadListFilters {
   static bool isFollowUp(String? name) {
     final n = name?.toLowerCase() ?? '';
     return n.contains('follow');
+  }
+
+  static List<int> findFollowUpStageIds(Iterable<StageEntity> stages) {
+    return stages.where((s) => isFollowUp(s.name)).map((s) => s.id).toList();
+  }
+
+  /// Create-date check used to keep non-follow-up tabs inside the date filter
+  /// after follow-up leads are fetched without that constraint.
+  static bool isCreatedInRange(LeadEntity lead, LeadDateRange range) {
+    final created = lead.createdDate?.toLocal();
+    if (created == null) return false;
+    final start = DateTime(
+      range.start.year,
+      range.start.month,
+      range.start.day,
+    );
+    final end = DateTime(
+      range.end.year,
+      range.end.month,
+      range.end.day,
+      23,
+      59,
+      59,
+    );
+    return !created.isBefore(start) && !created.isAfter(end);
   }
 
   /// Initial CRM stage used by the Untouched filter.
@@ -68,9 +91,7 @@ class LeadListFilters {
       return false;
     }
     if (n.contains('dnp') || n.contains('do not')) return false;
-    return n == 'connected' ||
-        n == 'connect' ||
-        n.contains('connected');
+    return n == 'connected' || n == 'connect' || n.contains('connected');
   }
 
   /// Resolves the Connected stage id from fetched stages.
@@ -130,11 +151,16 @@ class LeadListFilters {
   ///
   /// Pass [pipelineOverride] when computing counts for a tab other than the
   /// currently selected one.
+  ///
+  /// [dateRange] is the active create-date filter. Follow-up ignores it.
+  /// Other tabs drop follow-up leads that were included only because that
+  /// section is date-independent.
   static List<LeadEntity> apply({
     required List<LeadEntity> leads,
     required LeadFilterState filter,
     required int? currentUserId,
     LeadPipelineTab? pipelineOverride,
+    LeadDateRange? dateRange,
   }) {
     final tab = pipelineOverride ?? filter.pipelineTab;
     var filtered = List<LeadEntity>.from(leads);
@@ -147,14 +173,20 @@ class LeadListFilters {
               .toList();
         }
       case LeadPipelineTab.followup:
-        filtered =
-            filtered.where((l) => isFollowUp(l.stage?.name)).toList();
+        filtered = filtered.where((l) => isFollowUp(l.stage?.name)).toList();
       case LeadPipelineTab.won:
         filtered = filtered.where((l) => isWon(l.stage?.name)).toList();
       case LeadPipelineTab.lost:
         filtered = filtered.where((l) => isLost(l.stage?.name)).toList();
       case LeadPipelineTab.all:
         break;
+    }
+
+    if (tab != LeadPipelineTab.followup && dateRange != null) {
+      filtered = filtered.where((lead) {
+        if (!isFollowUp(lead.stage?.name)) return true;
+        return isCreatedInRange(lead, dateRange);
+      }).toList();
     }
 
     final query = filter.searchQuery.trim().toLowerCase().replaceAll(' ', '');

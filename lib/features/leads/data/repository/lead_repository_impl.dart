@@ -12,9 +12,9 @@ class LeadRepositoryImpl implements LeadRepository {
     required LeadRemoteDatasource datasource,
     LeadMapper leadMapper = const LeadMapper(),
     LeadDetailMapper detailMapper = const LeadDetailMapper(),
-  })  : _datasource = datasource,
-        _leadMapper = leadMapper,
-        _detailMapper = detailMapper;
+  }) : _datasource = datasource,
+       _leadMapper = leadMapper,
+       _detailMapper = detailMapper;
 
   final LeadRemoteDatasource _datasource;
   final LeadMapper _leadMapper;
@@ -32,6 +32,7 @@ class LeadRepositoryImpl implements LeadRepository {
     int? excludePaidAdminId,
     List<int> excludePaidStageIds = const [],
     List<int> tagIds = const [],
+    List<int> dateExemptStageIds = const [],
   }) async {
     try {
       final dtos = await _datasource.searchRead(
@@ -45,6 +46,7 @@ class LeadRepositoryImpl implements LeadRepository {
         excludePaidAdminId: excludePaidAdminId,
         excludePaidStageIds: excludePaidStageIds,
         tagIds: tagIds,
+        dateExemptStageIds: dateExemptStageIds,
       );
       return Success(_leadMapper.toEntityList(dtos));
     } on Failure catch (failure) {

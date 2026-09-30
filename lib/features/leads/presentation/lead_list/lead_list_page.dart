@@ -51,7 +51,9 @@ class LeadListPage extends HookConsumerWidget {
         );
         return;
       }
-      final error = await ref.read(leadNotifierProvider.notifier).updateStage(
+      final error = await ref
+          .read(leadNotifierProvider.notifier)
+          .updateStage(
             leadId: lead.id,
             stageId: target.id,
             currentStageName: lead.stage?.name,
@@ -60,9 +62,7 @@ class LeadListPage extends HookConsumerWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            error ?? (won ? 'Marked as Won' : 'Marked as Lost'),
-          ),
+          content: Text(error ?? (won ? 'Marked as Won' : 'Marked as Lost')),
         ),
       );
     }
@@ -87,9 +87,7 @@ class LeadListPage extends HookConsumerWidget {
                           children: [
                             Text(
                               'Inside Sales · Pipeline',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
                                     color: AppTheme.textBody,
                                     fontWeight: FontWeight.w500,
@@ -99,9 +97,7 @@ class LeadListPage extends HookConsumerWidget {
                             const SizedBox(height: 1),
                             Text(
                               'Leads',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
+                              style: Theme.of(context).textTheme.titleLarge
                                   ?.copyWith(
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: -0.02,
@@ -219,8 +215,9 @@ class LeadListPage extends HookConsumerWidget {
                   ),
                   error: (error, _) => ErrorView(
                     key: const ValueKey('error'),
-                    message:
-                        error is Failure ? error.message : error.toString(),
+                    message: error is Failure
+                        ? error.message
+                        : error.toString(),
                     onRetry: () =>
                         ref.read(leadNotifierProvider.notifier).refresh(),
                   ),
@@ -229,6 +226,7 @@ class LeadListPage extends HookConsumerWidget {
                       leads: leads,
                       filter: filter,
                       currentUserId: currentUser?.id,
+                      dateRange: filter.effectiveDateRange,
                     );
                     if (filtered.isEmpty) {
                       return EmptyView(
@@ -547,6 +545,7 @@ class _PipelineTabs extends ConsumerWidget {
         filter: filter,
         currentUserId: currentUserId,
         pipelineOverride: tab,
+        dateRange: filter.effectiveDateRange,
       ).length;
     }
 
@@ -596,10 +595,11 @@ class _PipelineTabs extends ConsumerWidget {
                           text: ' ${countFor(tab.$1)}',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: (filter.pipelineTab == tab.$1
-                                    ? AppTheme.textPrimary
-                                    : AppTheme.textMuted)
-                                .withValues(alpha: 0.55),
+                            color:
+                                (filter.pipelineTab == tab.$1
+                                        ? AppTheme.textPrimary
+                                        : AppTheme.textMuted)
+                                    .withValues(alpha: 0.55),
                           ),
                         ),
                       ],

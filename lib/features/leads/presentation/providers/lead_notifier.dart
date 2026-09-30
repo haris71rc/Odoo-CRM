@@ -128,14 +128,20 @@ class LeadFilterState {
   }
 
   LeadDateRange? get resolvedDateRange => LeadDateRange.resolve(
-        filter: dateFilter,
-        customStart: customStartDate,
-        customEnd: customEndDate,
-      );
+    filter: dateFilter,
+    customStart: customStartDate,
+    customEnd: customEndDate,
+  );
 
   String? get dateFilterLabel {
     if (dateFilter == null) return null;
     return dateFilter!.label;
+  }
+
+  /// Create-date window applied to every pipeline tab except Follow-up.
+  LeadDateRange? get effectiveDateRange {
+    if (todayMine) return LeadDateRange.today();
+    return resolvedDateRange;
   }
 
   LeadFilterState copyWith({
@@ -164,12 +170,15 @@ class LeadFilterState {
       searchQuery: searchQuery ?? this.searchQuery,
       pipelineTab: pipelineTab ?? this.pipelineTab,
       dateFilter: clearDateFilter ? null : (dateFilter ?? this.dateFilter),
-      customStartDate:
-          clearCustomDates ? null : (customStartDate ?? this.customStartDate),
-      customEndDate:
-          clearCustomDates ? null : (customEndDate ?? this.customEndDate),
-      assignedUserId:
-          clearAssignedUser ? null : (assignedUserId ?? this.assignedUserId),
+      customStartDate: clearCustomDates
+          ? null
+          : (customStartDate ?? this.customStartDate),
+      customEndDate: clearCustomDates
+          ? null
+          : (customEndDate ?? this.customEndDate),
+      assignedUserId: clearAssignedUser
+          ? null
+          : (assignedUserId ?? this.assignedUserId),
       assignedUserName: clearAssignedUser
           ? null
           : (assignedUserName ?? this.assignedUserName),
@@ -220,10 +229,7 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
         );
       case 'untouched':
         final next = !state.untouched;
-        state = state.copyWith(
-          untouched: next,
-          clearStage: next,
-        );
+        state = state.copyWith(untouched: next, clearStage: next);
       // case 'priority':
       //   state = state.copyWith(priorityOnly: !state.priorityOnly);
       case 'open':
@@ -379,12 +385,7 @@ class LeadNotifier extends _$LeadNotifier {
     // Assigned to me today → logged-in user + create_date = today.
     if (serverKey.todayMine) {
       assignedUserId = currentUserId;
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      range = LeadDateRange(
-        start: today,
-        end: DateTime(today.year, today.month, today.day, 23, 59, 59),
-      );
+      range = LeadDateRange.today();
     }
 
     List<int> excludeStageIds = const [];
@@ -441,6 +442,14 @@ class LeadNotifier extends _$LeadNotifier {
       if (tagIds.isEmpty) return const [];
     }
 
+    // Follow-up stays in the result even when a create-date filter is on.
+    // Other tabs drop those out-of-range follow-ups locally.
+    List<int> dateExemptStageIds = const [];
+    if (range != null) {
+      final stages = await ref.watch(stageNotifierProvider.future);
+      dateExemptStageIds = LeadListFilters.findFollowUpStageIds(stages);
+    }
+
     final result = await repository.getLeads(
       startDate: range?.start,
       endDate: range?.end,
@@ -453,6 +462,7 @@ class LeadNotifier extends _$LeadNotifier {
       excludePaidAdminId: excludePaidAdminId,
       excludePaidStageIds: excludePaidStageIds,
       tagIds: tagIds,
+      dateExemptStageIds: dateExemptStageIds,
     );
 
     return result.when(
@@ -472,7 +482,9 @@ class LeadNotifier extends _$LeadNotifier {
     String? currentStageName,
     String? targetStageName,
   }) async {
-    final validation = await ref.read(callLogServiceProvider).validateStageChange(
+    final validation = await ref
+        .read(callLogServiceProvider)
+        .validateStageChange(
           leadId: leadId,
           currentStageName: currentStageName,
           targetStageName: targetStageName,

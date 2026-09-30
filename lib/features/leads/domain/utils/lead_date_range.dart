@@ -7,6 +7,12 @@ class LeadDateRange {
   final DateTime start;
   final DateTime end;
 
+  static LeadDateRange today({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final day = DateTime(current.year, current.month, current.day);
+    return LeadDateRange(start: day, end: _endOfDay(day));
+  }
+
   /// Returns null when [filter] is null (no date constraint).
   /// For [LeadDateFilter.custom], uses [customStart]/[customEnd] when both set.
   static LeadDateRange? resolve({
@@ -22,10 +28,7 @@ class LeadDateRange {
 
     switch (filter) {
       case LeadDateFilter.today:
-        return LeadDateRange(
-          start: today,
-          end: _endOfDay(today),
-        );
+        return LeadDateRange(start: today, end: _endOfDay(today));
       case LeadDateFilter.thisWeek:
         final monday = today.subtract(Duration(days: today.weekday - 1));
         final sunday = monday.add(const Duration(days: 6));
