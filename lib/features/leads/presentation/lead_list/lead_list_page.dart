@@ -568,47 +568,82 @@ class _PipelineTabs extends ConsumerWidget {
                 onTap: () => ref
                     .read(leadFilterNotifierProvider.notifier)
                     .setPipelineTab(tab.$1),
-                child: Container(
-                  padding: const EdgeInsets.only(bottom: 11),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        width: 2.5,
-                        color: filter.pipelineTab == tab.$1
-                            ? AppTheme.navy
-                            : Colors.transparent,
-                      ),
-                    ),
-                  ),
-                  child: Text.rich(
-                    TextSpan(
-                      text: tab.$2,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: filter.pipelineTab == tab.$1
-                            ? AppTheme.textPrimary
-                            : AppTheme.textMuted,
-                      ),
-                      children: [
-                        TextSpan(
-                          text: ' ${countFor(tab.$1)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color:
-                                (filter.pipelineTab == tab.$1
-                                        ? AppTheme.textPrimary
-                                        : AppTheme.textMuted)
-                                    .withValues(alpha: 0.55),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                child: _PipelineTabLabel(
+                  label: tab.$2,
+                  count: countFor(tab.$1),
+                  selected: filter.pipelineTab == tab.$1,
+                  highlighted: tab.$1 == LeadPipelineTab.followup,
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _PipelineTabLabel extends StatelessWidget {
+  const _PipelineTabLabel({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.highlighted,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelColor = highlighted
+        ? AppTheme.followUpFg
+        : (selected ? AppTheme.textPrimary : AppTheme.textMuted);
+    final countColor = highlighted
+        ? AppTheme.followUpFg.withValues(alpha: 0.75)
+        : labelColor.withValues(alpha: 0.55);
+
+    return Container(
+      padding: EdgeInsets.only(bottom: highlighted ? 7 : 11),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            width: 2.5,
+            color: selected ? AppTheme.navy : Colors.transparent,
+          ),
+        ),
+      ),
+      child: Container(
+        padding: highlighted
+            ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+            : EdgeInsets.zero,
+        decoration: highlighted
+            ? BoxDecoration(
+                color: AppTheme.followUpBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.followUpBorder),
+              )
+            : null,
+        child: Text.rich(
+          TextSpan(
+            text: label,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              color: labelColor,
+            ),
+            children: [
+              TextSpan(
+                text: ' $count',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: countColor,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
