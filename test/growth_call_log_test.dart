@@ -11,9 +11,31 @@ import 'package:odoocrm/features/call_log/domain/entities/growth_call_log_reques
 import 'package:odoocrm/features/call_log/domain/services/growth_call_log_service.dart';
 import 'package:odoocrm/features/call_log/domain/utils/growth_call_id.dart';
 import 'package:odoocrm/features/call_log/domain/utils/growth_call_retry_policy.dart';
+import 'package:odoocrm/features/call_log/domain/utils/growth_call_status.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('GrowthCallStatus', () {
+    test('keeps Result call values', () {
+      expect(GrowthCallStatus.normalize('Positive'), 'positive');
+      expect(GrowthCallStatus.normalize('Negative'), 'negative');
+      expect(GrowthCallStatus.normalize('Wrong number'), 'wrong_number');
+      expect(GrowthCallStatus.normalize('Picked'), 'picked');
+      expect(GrowthCallStatus.normalize('DNP'), 'dnp');
+    });
+
+    test('maps legacy / device statuses onto Result call set', () {
+      expect(GrowthCallStatus.normalize('missed'), 'dnp');
+      expect(GrowthCallStatus.normalize('busy'), 'dnp');
+      expect(GrowthCallStatus.normalize('hanged_up'), 'dnp');
+      expect(GrowthCallStatus.normalize('call_failed'), 'dnp');
+      expect(GrowthCallStatus.normalize('completed'), 'picked');
+      expect(GrowthCallStatus.normalize('answered'), 'picked');
+      expect(GrowthCallStatus.normalize(null, durationSeconds: 12), 'picked');
+      expect(GrowthCallStatus.normalize('', durationSeconds: 0), 'dnp');
+    });
+  });
 
   group('GrowthCallRetryPolicy', () {
     test('marks expected HTTP statuses as retryable', () {
@@ -80,6 +102,31 @@ void main() {
       );
       expect(reused, firstId);
     });
+
+    test('device inbound ids prefer Android call log id', () {
+      final at = DateTime.utc(2026, 9, 5, 14, 15);
+      final a = GrowthCallId.resolveDeviceInbound(
+        androidCallLogId: '998877',
+        phoneNumber: '919876543210',
+        callAt: at,
+        durationSeconds: 0,
+      );
+      final b = GrowthCallId.resolveDeviceInbound(
+        androidCallLogId: '998877',
+        phoneNumber: '911111111111',
+        callAt: at.add(const Duration(hours: 1)),
+        durationSeconds: 40,
+      );
+      expect(a, b);
+      expect(
+        a,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
+      );
+    });
   });
 
   group('GrowthCallLogRequest', () {
@@ -110,6 +157,35 @@ void main() {
         'status': 'picked',
         'created_at': '2026-09-05T14:15:00.000Z',
       });
+    });
+
+    test('serializes null lead_id for unmatched inbound', () {
+      final request = GrowthCallLogRequest(
+        tenant: 'digilawyer',
+        sessionId: 'session-abc',
+        leadId: null,
+        callId: 'aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee',
+        callDatetime: DateTime.utc(2026, 9, 5, 14, 15),
+        durationSeconds: 0,
+        direction: 'inbound',
+        status: 'dnp',
+        createdAt: DateTime.utc(2026, 9, 5, 14, 15),
+        phone: '7011528419',
+      );
+
+      expect(request.toJson()['lead_id'], isNull);
+      expect(request.toJson()['direction'], 'inbound');
+      expect(request.toJson()['status'], 'dnp');
+      expect(request.toJson()['phone'], '7011528419');
+    });
+
+    test('normalizePhoneForApi keeps last 10 digits', () {
+      expect(
+        GrowthCallLogRequest.normalizePhoneForApi('+91 70115-28419'),
+        '7011528419',
+      );
+      expect(GrowthCallLogRequest.normalizePhoneForApi('7011528419'), '7011528419');
+      expect(GrowthCallLogRequest.normalizePhoneForApi(''), isNull);
     });
 
     test('round-trips through JSON for outbox persistence', () {
@@ -609,6 +685,70 @@ void main() {
       expect(pending.single.deadLetter, isFalse);
       expect(pending.single.attempts, 21);
     });
+
+    test('enqueues inbound with null lead_id and posts it', () async {
+      await storage.write(key: 'session_id', value: 'sess-1');
+      await storage.write(key: 'app_tenant', value: 'digilawyer');
+      final datasource = _FakeGrowthDatasource();
+      final service = buildService(datasource);
+      final at = DateTime.utc(2026, 9, 11, 10, 0);
+
+      await service.enqueueInboundCall(
+        callEvent: CallLog(
+          lastCallDate: at,
+          duration: '00:00',
+          status: 'missed',
+        ),
+        salesperson: 'Mohd Haris',
+        androidCallLogId: '555',
+        phoneNumber: '919876543210',
+      );
+      await service.flushPending();
+
+      expect(datasource.requests, hasLength(1));
+      final body = datasource.requests.single.toJson();
+      expect(body['lead_id'], isNull);
+      expect(body['direction'], 'inbound');
+      expect(body['status'], 'dnp');
+      expect(body['phone'], '9876543210');
+      expect(
+        body['call_id'],
+        GrowthCallId.resolveDeviceInbound(
+          androidCallLogId: '555',
+          phoneNumber: '919876543210',
+          callAt: at,
+          durationSeconds: 0,
+        ),
+      );
+      expect(await outbox.loadPending(), isEmpty);
+    });
+
+    test('skips duplicate inbound enqueue for same android call id', () async {
+      await storage.write(key: 'session_id', value: 'sess-1');
+      final datasource = _FakeGrowthDatasource();
+      final service = buildService(datasource);
+      final at = DateTime.utc(2026, 9, 11, 10, 0);
+      final event = CallLog(
+        lastCallDate: at,
+        duration: '00:12',
+        status: 'picked',
+      );
+
+      await service.enqueueInboundCall(
+        callEvent: event,
+        androidCallLogId: '42',
+        phoneNumber: '919999999999',
+      );
+      await service.flushPending();
+      await service.enqueueInboundCall(
+        callEvent: event,
+        androidCallLogId: '42',
+        phoneNumber: '919999999999',
+      );
+      await service.flushPending();
+
+      expect(datasource.requests, hasLength(1));
+    });
   });
 
   group('GrowthCallLogDatasource mapping', () {
@@ -627,7 +767,7 @@ void main() {
             callDatetime: DateTime.utc(2026, 1, 1),
             durationSeconds: 0,
             direction: 'outbound',
-            status: 'completed',
+            status: 'dnp',
             createdAt: DateTime.utc(2026, 1, 1),
           ),
         ),
@@ -650,7 +790,7 @@ void main() {
             callDatetime: DateTime.utc(2026, 1, 1),
             durationSeconds: 0,
             direction: 'outbound',
-            status: 'completed',
+            status: 'dnp',
             createdAt: DateTime.utc(2026, 1, 1),
           ),
         ),

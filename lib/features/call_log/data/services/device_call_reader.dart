@@ -113,11 +113,48 @@ class DeviceCallReader {
           normalizedTarget: normalizedTarget,
           fromMs: fromMs,
           statusOptions: statusOptions,
+          requirePhoneMatch: true,
         );
         if (event != null) events.add(event);
       }
 
-      events.sort((a, b) => a.at.compareTo(b.at));
+      events.sort(_compareEvents);
+      return events;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// All inbound / missed / rejected device calls since [since], oldest first.
+  ///
+  /// Used by the global inbound Growth sync (not lead-scoped).
+  Future<List<DeviceCallEvent>> findInboundCallsSince({
+    required DateTime since,
+    List<CallStatusOption> statusOptions = const [],
+  }) async {
+    if (!isSupported) return const [];
+
+    final permitted = await ensurePermission();
+    if (!permitted) return const [];
+
+    try {
+      final fromMs = since.millisecondsSinceEpoch;
+      final entries = await native.CallLog.query(dateFrom: fromMs);
+      final events = <DeviceCallEvent>[];
+
+      for (final entry in entries) {
+        final event = _toDeviceEvent(
+          entry,
+          normalizedTarget: '',
+          fromMs: fromMs,
+          statusOptions: statusOptions,
+          requirePhoneMatch: false,
+          inboundOnly: true,
+        );
+        if (event != null) events.add(event);
+      }
+
+      events.sort(_compareEvents);
       return events;
     } catch (_) {
       return const [];
@@ -172,23 +209,36 @@ class DeviceCallReader {
     required String normalizedTarget,
     required int fromMs,
     required List<CallStatusOption> statusOptions,
+    required bool requirePhoneMatch,
+    bool inboundOnly = false,
   }) {
-    if (!_matchesPhone(normalizedTarget, entry)) return null;
+    if (requirePhoneMatch && !_matchesPhone(normalizedTarget, entry)) {
+      return null;
+    }
 
     final ts = entry.timestamp;
     if (ts == null || ts < fromMs) return null;
 
     final isOutbound = _isOutbound(entry.callType);
-    final isInbound = _isInbound(entry.callType);
-    if (!isOutbound && !isInbound) return null;
+    final isInbound = _isInboundLike(entry.callType);
+    if (inboundOnly) {
+      if (!isInbound) return null;
+    } else if (!isOutbound && !isInbound) {
+      return null;
+    }
 
     final durationSeconds = entry.duration ?? 0;
+    final rawNumber = entry.number ?? entry.formattedNumber ?? '';
+    final normalizedPhone = PhoneNumberUtils.normalizeOrNull(rawNumber);
+
     return DeviceCallEvent(
       at: DateTime.fromMillisecondsSinceEpoch(ts),
       duration: CallLogDuration.formatFromSeconds(durationSeconds),
       status: _statusFor(entry.callType, durationSeconds, statusOptions),
       isOutbound: isOutbound,
       isInbound: isInbound,
+      androidCallLogId: entry.id,
+      phoneNumber: normalizedPhone ?? rawNumber.trim(),
     );
   }
 
@@ -234,9 +284,12 @@ class DeviceCallReader {
     return nextTs >= currentTs ? next : current;
   }
 
-  bool _isInbound(native.CallType? type) {
+  /// Incoming answered/wifi, plus missed/rejected (inbound intent).
+  bool _isInboundLike(native.CallType? type) {
     return type == native.CallType.incoming ||
-        type == native.CallType.wifiIncoming;
+        type == native.CallType.wifiIncoming ||
+        type == native.CallType.missed ||
+        type == native.CallType.rejected;
   }
 
   bool _isOutbound(native.CallType? type) {
@@ -256,6 +309,12 @@ class DeviceCallReader {
         ? normalizedTarget.substring(normalizedTarget.length - 10)
         : normalizedTarget;
     return a == b;
+  }
+
+  int _compareEvents(DeviceCallEvent a, DeviceCallEvent b) {
+    final byTime = a.at.compareTo(b.at);
+    if (byTime != 0) return byTime;
+    return (a.androidCallLogId ?? '').compareTo(b.androidCallLogId ?? '');
   }
 
   String _legacyMapStatus(native.CallType? type, int durationSeconds) {

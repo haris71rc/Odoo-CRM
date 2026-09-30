@@ -6,6 +6,8 @@ class DeviceCallEvent {
     required this.status,
     required this.isOutbound,
     required this.isInbound,
+    this.androidCallLogId,
+    this.phoneNumber,
   });
 
   /// Device call timestamp (local wall-clock).
@@ -19,4 +21,10 @@ class DeviceCallEvent {
 
   final bool isOutbound;
   final bool isInbound;
+
+  /// Android CallLog provider `_ID` when available.
+  final String? androidCallLogId;
+
+  /// Raw/normalized dialer number when available.
+  final String? phoneNumber;
 }

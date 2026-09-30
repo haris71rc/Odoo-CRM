@@ -18,7 +18,7 @@ class GrowthCallId {
     required int leadId,
     required String direction,
     required DateTime callAt,
-    Iterable<({int leadId, String direction, DateTime callAt, String callId})>
+    Iterable<({int? leadId, String direction, DateTime callAt, String callId})>
         known = const [],
   }) {
     final normalizedDirection =
@@ -36,6 +36,27 @@ class GrowthCallId {
     final bucket =
         callUtc.millisecondsSinceEpoch ~/ dedupeWindow.inMilliseconds;
     return uuidV5('growth-call|$leadId|$normalizedDirection|$bucket');
+  }
+
+  /// Idempotency key for unmatched inbound rows from the Android call log.
+  ///
+  /// Prefers the stable Android CallLog `_ID`. Falls back to phone + timestamp
+  /// + duration when the provider id is missing.
+  static String resolveDeviceInbound({
+    String? androidCallLogId,
+    String? phoneNumber,
+    required DateTime callAt,
+    required int durationSeconds,
+  }) {
+    final androidId = androidCallLogId?.trim() ?? '';
+    if (androidId.isNotEmpty) {
+      return uuidV5('growth-call|android|$androidId|inbound');
+    }
+
+    final phone = phoneNumber?.trim() ?? '';
+    final ms = callAt.toUtc().millisecondsSinceEpoch;
+    final duration = durationSeconds < 0 ? 0 : durationSeconds;
+    return uuidV5('growth-call|device|$phone|$ms|$duration|inbound');
   }
 
   /// RFC 4122 UUID version 5 (SHA-1).

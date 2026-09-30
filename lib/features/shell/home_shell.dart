@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:odoocrm/core/providers/app_permissions_provider.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
+import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
+import 'package:odoocrm/features/call_log/presentation/providers/growth_call_log_providers.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key, required this.navigationShell});
@@ -13,13 +17,42 @@ class HomeShell extends ConsumerStatefulWidget {
   ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends ConsumerState<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell>
+    with WidgetsBindingObserver {
+  Timer? _resumeSyncDebounce;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(appPermissionsNotifierProvider.notifier).requestStartupIfNeeded();
+      _triggerInboundSync();
     });
+  }
+
+  @override
+  void dispose() {
+    _resumeSyncDebounce?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    _resumeSyncDebounce?.cancel();
+    _resumeSyncDebounce = Timer(const Duration(seconds: 2), _triggerInboundSync);
+  }
+
+  void _triggerInboundSync() {
+    final user = ref.read(authNotifierProvider).valueOrNull;
+    if (user == null) return;
+    unawaited(
+      ref.read(inboundCallSyncServiceProvider).syncIfNeeded(
+            salesperson: user.name,
+          ),
+    );
   }
 
   void _onTap(int index) {

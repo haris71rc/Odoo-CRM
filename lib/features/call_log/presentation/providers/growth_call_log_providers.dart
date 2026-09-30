@@ -2,7 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
 import 'package:odoocrm/features/call_log/data/datasource/growth_call_log_datasource.dart';
 import 'package:odoocrm/features/call_log/data/datasource/growth_call_outbox.dart';
+import 'package:odoocrm/features/call_log/data/datasource/inbound_call_sync_store.dart';
+import 'package:odoocrm/features/call_log/data/services/device_call_reader.dart';
 import 'package:odoocrm/features/call_log/domain/services/growth_call_log_service.dart';
+import 'package:odoocrm/features/call_log/domain/services/inbound_call_sync_service.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'growth_call_log_providers.g.dart';
@@ -18,3 +21,18 @@ GrowthCallLogService growthCallLogService(Ref ref) {
   ref.onDispose(service.dispose);
   return service;
 }
+
+@Riverpod(keepAlive: true)
+InboundCallSyncStore inboundCallSyncStore(Ref ref) {
+  return InboundCallSyncStore(ref.watch(secureStorageServiceProvider));
+}
+
+@Riverpod(keepAlive: true)
+InboundCallSyncService inboundCallSyncService(Ref ref) {
+  return InboundCallSyncService(
+    deviceCallReader: const DeviceCallReader(),
+    growthCallLogService: ref.watch(growthCallLogServiceProvider),
+    syncStore: ref.watch(inboundCallSyncStoreProvider),
+  );
+}
+

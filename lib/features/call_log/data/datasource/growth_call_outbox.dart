@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:odoocrm/core/constants/app_constants.dart';
 import 'package:odoocrm/core/storage/secure_storage_service.dart';
 import 'package:odoocrm/features/call_log/domain/entities/growth_call_log_request.dart';
+import 'package:odoocrm/features/call_log/domain/utils/growth_call_status.dart';
 
 /// Queue status for a pending Growth POST.
 enum GrowthOutboxStatus {
@@ -113,13 +114,15 @@ class GrowthOutboxItem {
 class GrowthAckedCall {
   const GrowthAckedCall({
     required this.callId,
-    required this.leadId,
     required this.direction,
     required this.callAt,
+    this.leadId,
   });
 
   final String callId;
-  final int leadId;
+
+  /// Null for unmatched inbound device calls.
+  final int? leadId;
   final String direction;
   final DateTime callAt;
 
@@ -131,9 +134,17 @@ class GrowthAckedCall {
       };
 
   factory GrowthAckedCall.fromJson(Map<String, dynamic> json) {
+    final rawLead = json['lead_id'];
+    int? leadId;
+    if (rawLead is num) {
+      leadId = rawLead.toInt();
+    } else if (rawLead is String) {
+      leadId = int.tryParse(rawLead);
+    }
+
     return GrowthAckedCall(
       callId: json['call_id'] as String? ?? '',
-      leadId: (json['lead_id'] as num?)?.toInt() ?? 0,
+      leadId: leadId,
       direction: json['direction'] as String? ?? 'outbound',
       callAt: DateTime.tryParse(json['call_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
@@ -260,6 +271,7 @@ class GrowthCallOutbox {
         salesperson: (b.salesperson?.trim().isNotEmpty == true)
             ? b.salesperson
             : a.salesperson,
+        phone: (b.phone?.trim().isNotEmpty == true) ? b.phone : a.phone,
       ),
       // Keep attempts from the older entry so retries continue.
       status: GrowthOutboxStatus.pending,
@@ -270,12 +282,10 @@ class GrowthCallOutbox {
   }
 
   String _preferStatus(String current, String incoming) {
-    if (incoming.trim().isEmpty) return current;
-    if (current.trim().isEmpty || current == 'unknown') return incoming;
-    // Prefer non-zero-signal statuses over placeholders.
-    const weak = {'unknown', 'completed', 'call_failed'};
-    if (weak.contains(current) && !weak.contains(incoming)) return incoming;
-    return incoming;
+    if (incoming.trim().isEmpty) return GrowthCallStatus.normalize(current);
+    final a = GrowthCallStatus.normalize(current);
+    final b = GrowthCallStatus.normalize(incoming);
+    return GrowthCallStatus.rank(b) >= GrowthCallStatus.rank(a) ? b : a;
   }
 }
 

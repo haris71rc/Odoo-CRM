@@ -11,6 +11,7 @@ import 'package:odoocrm/features/call_log/domain/entities/growth_call_log_reques
 import 'package:odoocrm/features/call_log/domain/utils/call_log_duration.dart';
 import 'package:odoocrm/features/call_log/domain/utils/growth_call_id.dart';
 import 'package:odoocrm/features/call_log/domain/utils/growth_call_retry_policy.dart';
+import 'package:odoocrm/features/call_log/domain/utils/growth_call_status.dart';
 
 /// Production Growth BI writer: durable outbox + stable idempotency keys.
 ///
@@ -62,6 +63,26 @@ class GrowthCallLogService {
     );
   }
 
+  /// Enqueues an inbound device call (often without a lead) into the outbox.
+  Future<void> enqueueInboundCall({
+    required CallLog callEvent,
+    String? salesperson,
+    int? leadId,
+    String? androidCallLogId,
+    String? phoneNumber,
+    bool flush = true,
+  }) {
+    return enqueueCall(
+      leadId: leadId,
+      callEvent: callEvent,
+      direction: 'inbound',
+      salesperson: salesperson,
+      androidCallLogId: androidCallLogId,
+      phoneNumber: phoneNumber,
+      flush: flush,
+    );
+  }
+
   /// @nodoc Compatibility alias used by older call sites / tests.
   Future<void> logOutboundCall({
     required int leadId,
@@ -75,70 +96,94 @@ class GrowthCallLogService {
       );
 
   Future<void> enqueueCall({
-    required int leadId,
+    int? leadId,
     required CallLog callEvent,
     required String direction,
     String? salesperson,
+    String? androidCallLogId,
+    String? phoneNumber,
+    bool flush = true,
   }) async {
     try {
-      if (leadId <= 0) {
+      final normalizedDirection =
+          direction == 'inbound' ? 'inbound' : 'outbound';
+      final effectiveLeadId =
+          (leadId != null && leadId > 0) ? leadId : null;
+
+      if (normalizedDirection == 'outbound' && effectiveLeadId == null) {
         _log('CallLogUpload: skip invalid lead_id=$leadId');
         return;
       }
 
-      final normalizedDirection =
-          direction == 'inbound' ? 'inbound' : 'outbound';
       final callAt = callEvent.lastCallDate ?? DateTime.now();
+      final durationSeconds =
+          CallLogDuration.parseToSeconds(callEvent.duration);
       final known = await _knownFingerprints();
 
-      // Already accepted by Growth for this real-world call.
+      final callId = effectiveLeadId != null
+          ? GrowthCallId.resolve(
+              leadId: effectiveLeadId,
+              direction: normalizedDirection,
+              callAt: callAt,
+              known: [
+                for (final p in known.pending)
+                  (
+                    leadId: p.request.leadId,
+                    direction: p.request.direction,
+                    callAt: p.request.callDatetime,
+                    callId: p.callId,
+                  ),
+                for (final a in known.acked)
+                  (
+                    leadId: a.leadId,
+                    direction: a.direction,
+                    callAt: a.callAt,
+                    callId: a.callId,
+                  ),
+              ],
+            )
+          : GrowthCallId.resolveDeviceInbound(
+              androidCallLogId: androidCallLogId,
+              phoneNumber: phoneNumber,
+              callAt: callAt,
+              durationSeconds: durationSeconds,
+            );
+
+      // Already accepted / queued for this real-world call.
       for (final ack in known.acked) {
-        if (ack.leadId == leadId &&
+        if (ack.callId == callId) {
+          _log(
+            'CallLogRetryQueue: skip already-acked call_id=${ack.callId} '
+            'lead_id=$effectiveLeadId',
+          );
+          return;
+        }
+        if (effectiveLeadId != null &&
+            ack.leadId == effectiveLeadId &&
             ack.direction == normalizedDirection &&
             ack.callAt.toUtc().difference(callAt.toUtc()).abs() <=
                 GrowthCallId.dedupeWindow) {
           _log(
             'CallLogRetryQueue: skip already-acked call_id=${ack.callId} '
-            'lead_id=$leadId',
+            'lead_id=$effectiveLeadId',
           );
           return;
         }
       }
 
-      final callId = GrowthCallId.resolve(
-        leadId: leadId,
-        direction: normalizedDirection,
-        callAt: callAt,
-        known: [
-          for (final p in known.pending)
-            (
-              leadId: p.request.leadId,
-              direction: p.request.direction,
-              callAt: p.request.callDatetime,
-              callId: p.callId,
-            ),
-          for (final a in known.acked)
-            (
-              leadId: a.leadId,
-              direction: a.direction,
-              callAt: a.callAt,
-              callId: a.callId,
-            ),
-        ],
-      );
-
       final sessionId = await _secureStorage.getSessionId() ?? '';
       final tenant =
           await _secureStorage.getTenantId() ?? AppTenant.fallback.id;
       final now = DateTime.now().toUtc();
-      final durationSeconds =
-          CallLogDuration.parseToSeconds(callEvent.duration);
-      final status = _normalizeStatus(callEvent.status);
+      final status = GrowthCallStatus.normalize(
+        callEvent.status,
+        durationSeconds: durationSeconds,
+      );
 
       final request = GrowthCallLogRequest(
         tenant: tenant,
         sessionId: sessionId,
-        leadId: leadId,
+        leadId: effectiveLeadId,
         callId: callId,
         salesperson: _resolveSalesperson(salesperson),
         callDatetime: callAt.toUtc(),
@@ -146,6 +191,9 @@ class GrowthCallLogService {
         direction: normalizedDirection,
         status: status,
         createdAt: now,
+        phone: normalizedDirection == 'inbound'
+            ? GrowthCallLogRequest.normalizePhoneForApi(phoneNumber)
+            : null,
       );
 
       if (!_isValidPayload(request)) {
@@ -161,8 +209,10 @@ class GrowthCallLogService {
           status: GrowthOutboxStatus.pending,
         ),
       );
-      _log('CallLogRetryQueue: Added call $callId lead_id=$leadId');
-      unawaited(flushPending());
+      _log('CallLogRetryQueue: Added call $callId lead_id=$effectiveLeadId');
+      if (flush) {
+        unawaited(flushPending());
+      }
     } catch (e, st) {
       _log('CallLogRetryQueue: enqueue failed error=$e\n$st');
     }
@@ -374,22 +424,24 @@ class GrowthCallLogService {
   }
 
   bool _isValidPayload(GrowthCallLogRequest request) {
-    if (request.leadId <= 0) return false;
     if (request.callId.trim().isEmpty) return false;
     if (request.tenant.trim().isEmpty) return false;
     if (request.activityType != 'call') return false;
     if (request.direction != 'inbound' && request.direction != 'outbound') {
       return false;
     }
+    if (request.direction == 'outbound' &&
+        (request.leadId == null || request.leadId! <= 0)) {
+      return false;
+    }
+    if (request.direction == 'inbound' &&
+        request.leadId != null &&
+        request.leadId! <= 0) {
+      return false;
+    }
     if (request.durationSeconds < 0) return false;
-    if (request.status.trim().isEmpty) return false;
+    if (!GrowthCallStatus.allowed.contains(request.status)) return false;
     return true;
-  }
-
-  String _normalizeStatus(String? status) {
-    final trimmed = status?.trim() ?? '';
-    if (trimmed.isEmpty) return 'unknown';
-    return trimmed;
   }
 
   String? _resolveSalesperson(String? salesperson) {

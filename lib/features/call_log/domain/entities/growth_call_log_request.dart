@@ -3,20 +3,23 @@ class GrowthCallLogRequest {
   const GrowthCallLogRequest({
     required this.tenant,
     required this.sessionId,
-    required this.leadId,
     required this.callId,
     required this.callDatetime,
     required this.durationSeconds,
     required this.direction,
     required this.status,
     required this.createdAt,
+    this.leadId,
     this.salesperson,
     this.activityType = 'call',
+    this.phone,
   });
 
   final String tenant;
   final String sessionId;
-  final int leadId;
+
+  /// Odoo lead id. Null for unmatched inbound device calls.
+  final int? leadId;
   final String activityType;
   final String callId;
   final String? salesperson;
@@ -25,6 +28,9 @@ class GrowthCallLogRequest {
   final String direction;
   final String status;
   final DateTime createdAt;
+
+  /// Caller number for inbound device calls (digits; typically last 10).
+  final String? phone;
 
   Map<String, dynamic> toJson() {
     return {
@@ -40,14 +46,23 @@ class GrowthCallLogRequest {
       'direction': direction,
       'status': status,
       'created_at': _toIsoUtc(createdAt),
+      if (phone != null && phone!.trim().isNotEmpty) 'phone': phone!.trim(),
     };
   }
 
   factory GrowthCallLogRequest.fromJson(Map<String, dynamic> json) {
+    final rawLead = json['lead_id'];
+    int? leadId;
+    if (rawLead is num) {
+      leadId = rawLead.toInt();
+    } else if (rawLead is String) {
+      leadId = int.tryParse(rawLead);
+    }
+
     return GrowthCallLogRequest(
       tenant: json['tenant'] as String? ?? '',
       sessionId: json['session_id'] as String? ?? '',
-      leadId: (json['lead_id'] as num?)?.toInt() ?? 0,
+      leadId: leadId,
       activityType: json['activity_type'] as String? ?? 'call',
       callId: json['call_id'] as String? ?? '',
       salesperson: json['salesperson'] as String?,
@@ -55,9 +70,10 @@ class GrowthCallLogRequest {
           DateTime.now().toUtc(),
       durationSeconds: (json['duration_seconds'] as num?)?.toInt() ?? 0,
       direction: json['direction'] as String? ?? 'outbound',
-      status: json['status'] as String? ?? 'unknown',
+      status: json['status'] as String? ?? 'dnp',
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now().toUtc(),
+      phone: json['phone'] as String?,
     );
   }
 
@@ -65,6 +81,7 @@ class GrowthCallLogRequest {
     String? tenant,
     String? sessionId,
     int? leadId,
+    bool clearLeadId = false,
     String? activityType,
     String? callId,
     String? salesperson,
@@ -73,11 +90,12 @@ class GrowthCallLogRequest {
     String? direction,
     String? status,
     DateTime? createdAt,
+    String? phone,
   }) {
     return GrowthCallLogRequest(
       tenant: tenant ?? this.tenant,
       sessionId: sessionId ?? this.sessionId,
-      leadId: leadId ?? this.leadId,
+      leadId: clearLeadId ? null : (leadId ?? this.leadId),
       activityType: activityType ?? this.activityType,
       callId: callId ?? this.callId,
       salesperson: salesperson ?? this.salesperson,
@@ -86,7 +104,19 @@ class GrowthCallLogRequest {
       direction: direction ?? this.direction,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
+      phone: phone ?? this.phone,
     );
+  }
+
+  /// Digits-only phone suitable for Growth; prefers last 10 digits.
+  static String? normalizePhoneForApi(String? raw) {
+    if (raw == null) return null;
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return null;
+    if (digits.length > 10) {
+      return digits.substring(digits.length - 10);
+    }
+    return digits;
   }
 
   static String _toIsoUtc(DateTime value) {

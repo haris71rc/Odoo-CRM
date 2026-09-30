@@ -40,6 +40,11 @@ class AuthNotifier extends _$AuthNotifier {
     if (user != null) {
       // Replay Growth calls that failed while offline / session-expired.
       unawaited(ref.read(growthCallLogServiceProvider).flushPending());
+      unawaited(
+        ref.read(inboundCallSyncServiceProvider).syncIfNeeded(
+              salesperson: user.name,
+            ),
+      );
     }
     return user;
   }
@@ -72,6 +77,11 @@ class AuthNotifier extends _$AuthNotifier {
 
     state = AsyncData(userResult.valueOrNull);
     unawaited(ref.read(growthCallLogServiceProvider).flushPending());
+    unawaited(
+      ref.read(inboundCallSyncServiceProvider).syncIfNeeded(
+            salesperson: userResult.valueOrNull?.name,
+          ),
+    );
     return null;
   }
 

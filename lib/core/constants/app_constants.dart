@@ -17,4 +17,7 @@ class AppConstants {
 
   /// Durable Growth `/api/v1/calls/log` outbox (pending + recent acks).
   static const String growthCallOutboxKey = 'growth_call_outbox_v1';
+
+  /// Incremental inbound device-call sync cursor (Android CallLog watermark).
+  static const String inboundCallSyncCursorKey = 'inbound_call_sync_cursor_v1';
 }
