@@ -136,6 +136,8 @@ class CallLogUpdater {
         deviceAt: event.at,
         lastCallDate: current.lastCallDate,
         firstCallDate: current.firstCallDate,
+        storedDurationSeconds: CallLogDuration.parseToSeconds(current.duration),
+        deviceDurationSeconds: CallLogDuration.parseToSeconds(event.duration),
       )) {
         current = overlayDialerDetails(existing: current, event: event);
         continue;
@@ -166,18 +168,60 @@ class CallLogUpdater {
     required DateTime deviceAt,
     required DateTime? lastCallDate,
     DateTime? firstCallDate,
+    int storedDurationSeconds = 0,
+    int deviceDurationSeconds = 0,
   }) {
     final anchor = lastCallDate ?? firstCallDate;
     if (anchor == null) return true;
 
+    if (isSameStoredOutbound(
+      deviceAt: deviceAt,
+      anchor: anchor,
+      storedDurationSeconds: storedDurationSeconds,
+      deviceDurationSeconds: deviceDurationSeconds,
+    )) {
+      return false;
+    }
+
+    return deviceAt.toLocal().isAfter(anchor.toLocal());
+  }
+
+  /// Same CRM dial as [anchor], including when the dialer timestamp is hangup
+  /// time and the saved row is still a `00:00` placeholder.
+  static bool isSameStoredOutbound({
+    required DateTime deviceAt,
+    required DateTime anchor,
+    required int storedDurationSeconds,
+    required int deviceDurationSeconds,
+  }) {
     final deviceLocal = deviceAt.toLocal();
     final anchorLocal = anchor.toLocal();
     final delta = deviceLocal.difference(anchorLocal).abs();
+    if (delta <= duplicateWindow) return true;
 
-    // Same call already saved from CRM dial flow (timestamp skew).
-    if (delta <= duplicateWindow) return false;
+    const lookback = Duration(seconds: 15);
+    final earliest = anchorLocal.subtract(lookback);
 
-    return deviceLocal.isAfter(anchorLocal);
+    if (storedDurationSeconds <= 0 && deviceDurationSeconds > 0) {
+      final latest = anchorLocal.add(
+        Duration(seconds: deviceDurationSeconds) + duplicateWindow,
+      );
+      return !deviceLocal.isBefore(earliest) && !deviceLocal.isAfter(latest);
+    }
+
+    if (storedDurationSeconds > 0 && deviceDurationSeconds > 0) {
+      final durationGap = (deviceDurationSeconds - storedDurationSeconds).abs();
+      final similar = durationGap <= 5 ||
+          durationGap <= (storedDurationSeconds * 0.15).round();
+      if (!similar) return false;
+      final span = storedDurationSeconds > deviceDurationSeconds
+          ? storedDurationSeconds
+          : deviceDurationSeconds;
+      final latest = anchorLocal.add(Duration(seconds: span) + duplicateWindow);
+      return !deviceLocal.isBefore(earliest) && !deviceLocal.isAfter(latest);
+    }
+
+    return false;
   }
 
   /// Replaces placeholder duration / CRM clock with the Android dialer row
@@ -191,11 +235,16 @@ class CallLogUpdater {
     final anchor = existing.lastCallDate ?? existing.firstCallDate;
     if (anchor == null) return existing;
 
-    final delta = event.at.toLocal().difference(anchor.toLocal()).abs();
-    if (delta > duplicateWindow) return existing;
-
     final deviceSeconds = CallLogDuration.parseToSeconds(event.duration);
     final storedLatest = CallLogDuration.parseToSeconds(existing.duration);
+    if (!isSameStoredOutbound(
+      deviceAt: event.at,
+      anchor: anchor,
+      storedDurationSeconds: storedLatest,
+      deviceDurationSeconds: deviceSeconds,
+    )) {
+      return existing;
+    }
     final storedTotal = CallLogDuration.parseToSeconds(
       existing.totalDuration ?? existing.duration,
     );

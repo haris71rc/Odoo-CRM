@@ -421,6 +421,50 @@ void main() {
       );
     });
 
+    test('long call end time updates a 00:00 placeholder instead of a new call',
+        () {
+      final dialedAt = DateTime(2026, 8, 10, 12, 0, 0);
+      final existing = CallLogUpdater.applyOutboundCall(
+        existing: const CallLog(),
+        callEvent: CallLog(
+          lastCallDate: dialedAt,
+          duration: '00:00',
+          status: 'dnp',
+        ),
+        leadCreatedAt: dialedAt.subtract(const Duration(hours: 1)),
+      );
+      final endedAt = dialedAt.add(const Duration(minutes: 6));
+
+      expect(
+        CallLogUpdater.shouldApplyDeviceOutbound(
+          deviceAt: endedAt,
+          lastCallDate: existing.lastCallDate,
+          storedDurationSeconds: 0,
+          deviceDurationSeconds: 360,
+        ),
+        isFalse,
+      );
+
+      final synced = CallLogUpdater.applyDeviceSync(
+        existing: existing,
+        deviceCalls: [
+          DeviceCallEvent(
+            at: endedAt,
+            duration: '06:00',
+            status: 'picked',
+            isOutbound: true,
+            isInbound: false,
+          ),
+        ],
+        leadCreatedAt: dialedAt.subtract(const Duration(hours: 1)),
+      );
+
+      expect(synced.totalOutboundCalls, 1);
+      expect(synced.duration, '06:00');
+      expect(synced.status, 'picked');
+      expect(synced.totalDuration, '06:00');
+    });
+
     test('uses first call as duplicate anchor when last call is missing', () {
       final first = DateTime(2026, 8, 10, 18, 30, 49);
       expect(

@@ -5,6 +5,7 @@ import 'package:odoocrm/features/call_log/data/datasource/call_log_remote_dataso
 import 'package:odoocrm/features/call_log/data/repository/call_log_repository_impl.dart';
 import 'package:odoocrm/features/call_log/data/services/device_call_reader.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
+import 'package:odoocrm/features/call_log/domain/utils/connected_call_rule.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dart';
 import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
@@ -92,7 +93,9 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
 
     if (syncResult.isSuccess) {
       callLog = syncResult.valueOrNull ?? callLog;
-      if (_hasNewOutboundCall(previous, callLog)) {
+      final durationLanded = ConnectedCallRule.callWasMade(callLog) &&
+          !ConnectedCallRule.callWasMade(previous);
+      if (_hasNewOutboundCall(previous, callLog) || durationLanded) {
         final detailNotifier =
             ref.read(leadDetailNotifierProvider(leadId).notifier);
         await detailNotifier.autoAssignCaller(currentUser?.id);

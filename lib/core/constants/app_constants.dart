@@ -20,4 +20,7 @@ class AppConstants {
 
   /// Incremental inbound device-call sync cursor (Android CallLog watermark).
   static const String inboundCallSyncCursorKey = 'inbound_call_sync_cursor_v1';
+
+  /// CRM-initiated outbound dial waiting for the Android call log.
+  static const String pendingOutboundDialKey = 'pending_outbound_dial_v1';
 }

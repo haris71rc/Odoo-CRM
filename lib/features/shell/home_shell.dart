@@ -7,6 +7,7 @@ import 'package:odoocrm/core/providers/app_permissions_provider.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/growth_call_log_providers.dart';
+import 'package:odoocrm/features/call_log/presentation/providers/outbound_dial_sync_provider.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key, required this.navigationShell});
@@ -27,6 +28,9 @@ class _HomeShellState extends ConsumerState<HomeShell>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(appPermissionsNotifierProvider.notifier).requestStartupIfNeeded();
+      // Creates the outbound-dial observer so a call still syncs after the
+      // process was backgrounded or killed, even from the lead list.
+      ref.read(outboundDialSyncServiceProvider);
       _triggerInboundSync();
     });
   }

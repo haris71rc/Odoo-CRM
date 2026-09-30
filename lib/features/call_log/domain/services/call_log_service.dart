@@ -7,6 +7,7 @@ import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dar
 import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/services/growth_call_log_service.dart';
+import 'package:odoocrm/features/call_log/domain/utils/call_log_duration.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_updater.dart';
 import 'package:odoocrm/features/chatter/domain/repository/chatter_repository.dart';
 import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
@@ -81,6 +82,68 @@ class CallLogService {
       );
     }
     return saveResult;
+  }
+
+  /// Saves a dialer row for a CRM-initiated call.
+  ///
+  /// A row already stored for this dial (including a `00:00` placeholder whose
+  /// dialer timestamp is hangup time) is updated in place. A genuinely new
+  /// call increments the outbound count.
+  Future<Result<CallLog>> saveRecognizedOutbound({
+    required int leadId,
+    required CallLog callEvent,
+    required DateTime? leadCreatedAt,
+    String? salesperson,
+  }) async {
+    final existingResult = await getCallLog(leadId);
+    if (existingResult.isFailure) {
+      return Error(existingResult.failureOrNull!);
+    }
+
+    final existing = existingResult.valueOrNull ?? const CallLog();
+    final eventTime = callEvent.lastCallDate ?? DateTime.now();
+    final deviceSeconds = CallLogDuration.parseToSeconds(callEvent.duration);
+    final storedSeconds = CallLogDuration.parseToSeconds(existing.duration);
+    final isNew = CallLogUpdater.shouldApplyDeviceOutbound(
+      deviceAt: eventTime,
+      lastCallDate: existing.lastCallDate,
+      firstCallDate: existing.firstCallDate,
+      storedDurationSeconds: storedSeconds,
+      deviceDurationSeconds: deviceSeconds,
+    );
+
+    if (!isNew) {
+      final upgraded = CallLogUpdater.overlayDialerDetails(
+        existing: existing,
+        event: DeviceCallEvent(
+          at: eventTime,
+          duration: callEvent.duration ?? CallLogDuration.formatFromSeconds(0),
+          status: callEvent.status ?? existing.status ?? '',
+          isOutbound: true,
+          isInbound: false,
+        ),
+      );
+      if (!CallLogUpdater.metricsChanged(existing, upgraded)) {
+        return Success(upgraded);
+      }
+      final saveResult = await saveCallLog(leadId: leadId, callLog: upgraded);
+      if (saveResult.isFailure) return Error(saveResult.failureOrNull!);
+      _enqueueGrowthOutbound(
+        leadId: leadId,
+        callEvent: callEvent,
+        salesperson: salesperson,
+      );
+      return Success(upgraded);
+    }
+
+    final recorded = await recordOutboundCall(
+      leadId: leadId,
+      callEvent: callEvent,
+      leadCreatedAt: leadCreatedAt,
+      salesperson: salesperson,
+    );
+    if (recorded.isFailure) return Error(recorded.failureOrNull!);
+    return Success(callEvent);
   }
 
   /// Syncs inbound call count from the device when it exceeds stored value.
@@ -170,6 +233,9 @@ class CallLogService {
         deviceAt: event.at,
         lastCallDate: current.lastCallDate,
         firstCallDate: current.firstCallDate,
+        storedDurationSeconds:
+            CallLogDuration.parseToSeconds(current.duration),
+        deviceDurationSeconds: CallLogDuration.parseToSeconds(event.duration),
       )) {
         current = CallLogUpdater.overlayDialerDetails(
           existing: current,
