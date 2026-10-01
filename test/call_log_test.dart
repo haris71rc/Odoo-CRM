@@ -8,6 +8,7 @@ import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dar
 import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/services/call_log_service.dart';
+import 'package:odoocrm/features/call_log/domain/utils/call_log_catch_up.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_updater.dart';
 import 'package:odoocrm/features/call_log/domain/utils/connected_call_rule.dart';
 import 'package:odoocrm/features/chatter/domain/entities/chatter_message_entity.dart';
@@ -463,6 +464,94 @@ void main() {
       expect(synced.duration, '06:00');
       expect(synced.status, 'picked');
       expect(synced.totalDuration, '06:00');
+    });
+
+    test('catch-up keeps every call after the last synced time', () {
+      final savedAt = DateTime(2026, 8, 10, 12);
+      const existing = CallLog(
+        duration: '01:00',
+        totalDuration: '01:00',
+        totalOutboundCalls: 1,
+        totalInboundCalls: 1,
+        status: 'picked',
+      );
+      final saved = existing.copyWith(
+        firstCallDate: savedAt,
+        lastCallDate: savedAt,
+      );
+
+      final missed = [
+        DeviceCallEvent(
+          at: savedAt.add(const Duration(seconds: 4)),
+          duration: '01:00',
+          status: 'picked',
+          isOutbound: true,
+          isInbound: false,
+          androidCallLogId: 'saved',
+        ),
+        DeviceCallEvent(
+          at: savedAt.add(const Duration(seconds: 20)),
+          duration: '00:08',
+          status: 'dnp',
+          isOutbound: true,
+          isInbound: false,
+          androidCallLogId: 'next',
+        ),
+        DeviceCallEvent(
+          at: savedAt.add(const Duration(minutes: 3)),
+          duration: '02:00',
+          status: 'picked',
+          isOutbound: true,
+          isInbound: false,
+          androidCallLogId: 'later',
+        ),
+        DeviceCallEvent(
+          at: savedAt.subtract(const Duration(hours: 2)),
+          duration: '00:30',
+          status: 'picked',
+          isOutbound: true,
+          isInbound: false,
+          androidCallLogId: 'old',
+        ),
+        DeviceCallEvent(
+          at: savedAt.subtract(const Duration(hours: 1)),
+          duration: '00:00',
+          status: 'missed',
+          isOutbound: false,
+          isInbound: true,
+          androidCallLogId: 'old-in',
+        ),
+        DeviceCallEvent(
+          at: savedAt.add(const Duration(minutes: 4)),
+          duration: '00:00',
+          status: 'missed',
+          isOutbound: false,
+          isInbound: true,
+          androidCallLogId: 'new-in',
+        ),
+      ];
+
+      final first = CallLogCatchUp.apply(
+        existing: saved,
+        deviceCalls: missed,
+        leadCreatedAt: savedAt.subtract(const Duration(days: 1)),
+      );
+
+      expect(first.log.totalOutboundCalls, 3);
+      expect(first.log.duration, '02:00');
+      expect(first.log.totalInboundCalls, 2);
+      expect(first.appliedCount, 3);
+
+      final again = CallLogCatchUp.apply(
+        existing: first.log,
+        deviceCalls: missed,
+        leadCreatedAt: savedAt.subtract(const Duration(days: 1)),
+        remembered: first.cursor,
+      );
+
+      expect(again.log.totalOutboundCalls, 3);
+      expect(again.log.totalInboundCalls, 2);
+      expect(again.appliedCount, 0);
     });
 
     test('uses first call as duplicate anchor when last call is missing', () {

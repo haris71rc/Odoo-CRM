@@ -4,6 +4,7 @@ import 'package:odoocrm/core/theme/stage_colors.dart';
 import 'package:odoocrm/core/utils/date_formatters.dart';
 import 'package:odoocrm/core/utils/initials.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
+import 'package:odoocrm/features/leads/presentation/widgets/duplicate_lead_chip.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LeadCard extends StatelessWidget {
@@ -16,6 +17,7 @@ class LeadCard extends StatelessWidget {
     this.isWon = false,
     this.isLost = false,
     this.hasFollowUp = false,
+    this.isDuplicate = false,
   });
 
   final LeadEntity lead;
@@ -25,6 +27,7 @@ class LeadCard extends StatelessWidget {
   final bool isWon;
   final bool isLost;
   final bool hasFollowUp;
+  final bool isDuplicate;
 
   Future<void> _call(BuildContext context) async {
     final number = lead.phone;
@@ -160,27 +163,31 @@ class LeadCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (hasFollowUp)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.followUpBg,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppTheme.followUpBorder),
-                      ),
-                      child: const Text(
-                        'FOLLOW-UP',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.followUpFg,
-                          letterSpacing: 0.02,
+                  if (hasFollowUp || isDuplicate) ...[
+                    if (hasFollowUp)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.followUpBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppTheme.followUpBorder),
+                        ),
+                        child: const Text(
+                          'FOLLOW-UP',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.followUpFg,
+                            letterSpacing: 0.02,
+                          ),
                         ),
                       ),
-                    ),
+                    if (hasFollowUp && isDuplicate) const SizedBox(width: 6),
+                    if (isDuplicate) const DuplicateLeadChip(),
+                  ],
                 ],
               ),
               const SizedBox(height: 11),

@@ -5,6 +5,7 @@ import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart'
 import 'package:odoocrm/features/call_log/data/datasource/pending_outbound_dial_store.dart';
 import 'package:odoocrm/features/call_log/domain/services/outbound_dial_sync_service.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
+import 'package:odoocrm/features/leads/presentation/providers/duplicate_lead_provider.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifier.dart';
 
 final outboundDialSyncServiceProvider = Provider<OutboundDialSyncService>((ref) {
@@ -50,6 +51,7 @@ final outboundDialSyncServiceProvider = Provider<OutboundDialSyncService>((ref) 
       final callLog = saved.valueOrNull ?? request.callLog;
       final moved = await detail.autoMoveToConnected(callLog);
       ref.invalidate(leadCallLogProvider(request.leadId));
+      ref.invalidate(duplicateLeadIdsProvider);
 
       final String message;
       if (moved) {

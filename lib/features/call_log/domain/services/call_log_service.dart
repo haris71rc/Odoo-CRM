@@ -7,6 +7,8 @@ import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dar
 import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/services/growth_call_log_service.dart';
+import 'package:odoocrm/features/call_log/domain/entities/lead_call_sync_cursor.dart';
+import 'package:odoocrm/features/call_log/domain/utils/call_log_catch_up.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_duration.dart';
 import 'package:odoocrm/features/call_log/domain/utils/call_log_updater.dart';
 import 'package:odoocrm/features/chatter/domain/repository/chatter_repository.dart';
@@ -170,16 +172,19 @@ class CallLogService {
     return Success(synced);
   }
 
-  /// Merges dialer-made device calls into Odoo when Lead Detail opens.
+  /// Catches Odoo up to the Android dialer.
   ///
-  /// Only outbound calls newer than the stored last call (outside the
-  /// duplicate window) are applied. Inbound totals are raised to match device.
-  /// Newly applied outbound events are also posted to Growth BI.
+  /// Outbound rows after the saved last call are all applied. The saved call
+  /// itself is only refreshed. [remembered] stops a later Sync from applying
+  /// the same Android row again. [persistCursor] runs only after a successful
+  /// Odoo write, or immediately when nothing changed.
   Future<Result<CallLog>> syncFromDevice({
     required int leadId,
     required List<DeviceCallEvent> deviceCalls,
     required DateTime? leadCreatedAt,
     String? salesperson,
+    LeadCallSyncCursor remembered = LeadCallSyncCursor.empty,
+    Future<void> Function(LeadCallSyncCursor cursor)? persistCursor,
   }) async {
     final existingResult = await getCallLog(leadId);
     if (existingResult.isFailure) {
@@ -187,22 +192,18 @@ class CallLogService {
     }
 
     final existing = existingResult.valueOrNull ?? const CallLog();
-    final newOutbound = _collectNewOutboundEvents(
-      existing: existing,
-      deviceCalls: deviceCalls,
-    );
-
-    final synced = CallLogUpdater.applyDeviceSync(
+    final catchUp = CallLogCatchUp.apply(
       existing: existing,
       deviceCalls: deviceCalls,
       leadCreatedAt: leadCreatedAt,
+      remembered: remembered,
     );
 
-    if (CallLogUpdater.metricsChanged(existing, synced)) {
-      final saveResult = await saveCallLog(leadId: leadId, callLog: synced);
+    if (CallLogUpdater.metricsChanged(existing, catchUp.log)) {
+      final saveResult = await saveCallLog(leadId: leadId, callLog: catchUp.log);
       if (saveResult.isFailure) return Error(saveResult.failureOrNull!);
 
-      for (final event in newOutbound) {
+      for (final event in catchUp.newOutbound) {
         _enqueueGrowthOutbound(
           leadId: leadId,
           callEvent: CallLog(
@@ -215,46 +216,11 @@ class CallLogService {
       }
     }
 
-    return Success(synced);
-  }
-
-  /// Same sequential rules as [CallLogUpdater.applyDeviceSync] for outbound.
-  List<DeviceCallEvent> _collectNewOutboundEvents({
-    required CallLog existing,
-    required List<DeviceCallEvent> deviceCalls,
-  }) {
-    var current = existing;
-    final applied = <DeviceCallEvent>[];
-    final outbound = deviceCalls.where((e) => e.isOutbound).toList()
-      ..sort((a, b) => a.at.compareTo(b.at));
-
-    for (final event in outbound) {
-      if (!CallLogUpdater.shouldApplyDeviceOutbound(
-        deviceAt: event.at,
-        lastCallDate: current.lastCallDate,
-        firstCallDate: current.firstCallDate,
-        storedDurationSeconds:
-            CallLogDuration.parseToSeconds(current.duration),
-        deviceDurationSeconds: CallLogDuration.parseToSeconds(event.duration),
-      )) {
-        current = CallLogUpdater.overlayDialerDetails(
-          existing: current,
-          event: event,
-        );
-        continue;
-      }
-      applied.add(event);
-      current = CallLogUpdater.applyOutboundCall(
-        existing: current,
-        callEvent: CallLog(
-          lastCallDate: event.at,
-          duration: event.duration,
-          status: event.status,
-        ),
-        leadCreatedAt: null,
-      );
+    if (persistCursor != null &&
+        (deviceCalls.isNotEmpty || remembered.seeded)) {
+      await persistCursor(catchUp.cursor);
     }
-    return applied;
+    return Success(catchUp.log);
   }
 
   void _enqueueGrowthOutbound({

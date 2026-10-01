@@ -6,6 +6,7 @@ import 'package:odoocrm/core/network/json_rpc_request.dart';
 import 'package:odoocrm/core/utils/date_formatters.dart';
 import 'package:odoocrm/features/leads/data/dto/lead_detail_dto.dart';
 import 'package:odoocrm/features/leads/data/dto/lead_dto.dart';
+import 'package:odoocrm/features/leads/data/dto/lead_phone_snapshot.dart';
 
 class LeadRemoteDatasource {
   LeadRemoteDatasource(this._dioClient);
@@ -16,6 +17,7 @@ class LeadRemoteDatasource {
     'id',
     'name',
     'phone',
+    'mobile',
     'partner_name',
     'stage_id',
     'user_id',
@@ -61,52 +63,18 @@ class LeadRemoteDatasource {
     List<int> tagIds = const [],
     List<int> dateExemptStageIds = const [],
   }) async {
-    final extra = <List<dynamic>>[];
-
-    if (assignedUserId != null) {
-      extra.add(['user_id', '=', assignedUserId]);
-    }
-
-    if (stageId != null) {
-      extra.add(['stage_id', '=', stageId]);
-    }
-
-    // // High priority temporarily disabled.
-    // if (priorityOnly) {
-    //   // DigiLawyer Odoo crm.lead.priority selection: "0" Normal, "1" High
-    //   extra.add(['priority', '=', '1']);
-    // }
-
-    if (openOnly) {
-      if (excludeStageIds.isNotEmpty) {
-        extra.add(['stage_id', 'not in', excludeStageIds]);
-      } else {
-        extra.add(['stage_id.is_won', '=', false]);
-        extra.add(['active', '=', true]);
-      }
-    }
-
-    // HOT_LEAD / WARM_LEAD (OR within the list; AND with other filters).
-    if (tagIds.isNotEmpty) {
-      extra.add(['tag_ids', 'in', tagIds]);
-    }
-
-    // Exclude Paid: Won/Lost assigned to Administrator.
-    // Odoo polish: NOT (user_id = admin AND stage_id in won/lost).
-    final domain = <dynamic>[
-      ...AppEnvironment.mergeDomain(extra),
-      ..._createDateDomain(
-        startDate: startDate,
-        endDate: endDate,
-        dateExemptStageIds: dateExemptStageIds,
-      ),
-      if (excludePaidAdminId != null && excludePaidStageIds.isNotEmpty) ...[
-        '!',
-        '&',
-        ['user_id', '=', excludePaidAdminId],
-        ['stage_id', 'in', excludePaidStageIds],
-      ],
-    ];
+    final domain = _searchDomain(
+      startDate: startDate,
+      endDate: endDate,
+      assignedUserId: assignedUserId,
+      stageId: stageId,
+      openOnly: openOnly,
+      excludeStageIds: excludeStageIds,
+      excludePaidAdminId: excludePaidAdminId,
+      excludePaidStageIds: excludePaidStageIds,
+      tagIds: tagIds,
+      dateExemptStageIds: dateExemptStageIds,
+    );
     // ignore: avoid_print
     print('[LeadRemoteDatasource] crm.lead search_read domain: $domain');
 
@@ -134,6 +102,144 @@ class LeadRemoteDatasource {
     return result
         .map((item) => LeadDto.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
+  }
+
+  /// Same assignee, stage, and tag filters as [searchRead], without create date.
+  ///
+  /// Used to find an already-called lead that sits outside the list's date range.
+  Future<List<LeadPhoneSnapshot>> searchPhoneSnapshots({
+    int? assignedUserId,
+    int? stageId,
+    bool openOnly = false,
+    List<int> excludeStageIds = const [],
+    int? excludePaidAdminId,
+    List<int> excludePaidStageIds = const [],
+    List<int> tagIds = const [],
+  }) {
+    final domain = _searchDomain(
+      assignedUserId: assignedUserId,
+      stageId: stageId,
+      openOnly: openOnly,
+      excludeStageIds: excludeStageIds,
+      excludePaidAdminId: excludePaidAdminId,
+      excludePaidStageIds: excludePaidStageIds,
+      tagIds: tagIds,
+      includeCreateDate: false,
+    );
+    return _searchPhoneSnapshots(domain, limit: 5000);
+  }
+
+  /// Leads whose phone or mobile contains one of [keys] (last-10 fragments).
+  Future<List<LeadPhoneSnapshot>> searchByPhoneKeys(List<String> keys) {
+    final unique = keys
+        .map((key) => key.trim())
+        .where((key) => key.isNotEmpty)
+        .toSet();
+    if (unique.isEmpty) return Future.value(const []);
+
+    final clauses = <List<dynamic>>[
+      for (final key in unique) ...[
+        ['phone', 'ilike', key],
+        ['mobile', 'ilike', key],
+      ],
+    ];
+    final domain = <dynamic>[
+      ...AppEnvironment.baseDomain,
+      ..._orDomain(clauses),
+    ];
+    return _searchPhoneSnapshots(domain, limit: 80);
+  }
+
+  Future<List<LeadPhoneSnapshot>> _searchPhoneSnapshots(
+    List<dynamic> domain, {
+    required int limit,
+  }) async {
+    final request = JsonRpcRequest.callKw(
+      model: 'crm.lead',
+      method: 'search_read',
+      args: [domain],
+      kwargs: {
+        'fields': const ['id', 'phone', 'mobile', 'create_date'],
+        'order': 'create_date desc',
+        'limit': limit,
+      },
+    );
+
+    final response = await _dioClient.postJsonRpc(
+      AppConstants.callKwPath,
+      request,
+    );
+
+    final result = response['result'];
+    if (result is! List) {
+      throw const ParsingFailure('Unexpected leads response');
+    }
+
+    return result
+        .map(
+          (item) => LeadPhoneSnapshot.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
+
+  List<dynamic> _searchDomain({
+    DateTime? startDate,
+    DateTime? endDate,
+    int? assignedUserId,
+    int? stageId,
+    bool openOnly = false,
+    List<int> excludeStageIds = const [],
+    int? excludePaidAdminId,
+    List<int> excludePaidStageIds = const [],
+    List<int> tagIds = const [],
+    List<int> dateExemptStageIds = const [],
+    bool includeCreateDate = true,
+  }) {
+    final extra = <List<dynamic>>[];
+
+    if (assignedUserId != null) {
+      extra.add(['user_id', '=', assignedUserId]);
+    }
+
+    if (stageId != null) {
+      extra.add(['stage_id', '=', stageId]);
+    }
+
+    if (openOnly) {
+      if (excludeStageIds.isNotEmpty) {
+        extra.add(['stage_id', 'not in', excludeStageIds]);
+      } else {
+        extra.add(['stage_id.is_won', '=', false]);
+        extra.add(['active', '=', true]);
+      }
+    }
+
+    if (tagIds.isNotEmpty) {
+      extra.add(['tag_ids', 'in', tagIds]);
+    }
+
+    return <dynamic>[
+      ...AppEnvironment.mergeDomain(extra),
+      if (includeCreateDate)
+        ..._createDateDomain(
+          startDate: startDate,
+          endDate: endDate,
+          dateExemptStageIds: dateExemptStageIds,
+        ),
+      if (excludePaidAdminId != null && excludePaidStageIds.isNotEmpty) ...[
+        '!',
+        '&',
+        ['user_id', '=', excludePaidAdminId],
+        ['stage_id', 'in', excludePaidStageIds],
+      ],
+    ];
+  }
+
+  static List<dynamic> _orDomain(List<List<dynamic>> clauses) {
+    if (clauses.length <= 1) return clauses;
+    return [for (var i = 0; i < clauses.length - 1; i++) '|', ...clauses];
   }
 
   /// Create-date clause. Follow-up stages are OR'd in so that section is not

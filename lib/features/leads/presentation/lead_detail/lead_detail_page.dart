@@ -17,10 +17,12 @@ import 'package:odoocrm/features/chatter/presentation/widgets/chatter_message_bo
 import 'package:odoocrm/features/chatter/presentation/widgets/chatter_tracking_values.dart';
 import 'package:odoocrm/features/chatter/presentation/widgets/log_note_sheet.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
+import 'package:odoocrm/features/leads/presentation/providers/duplicate_lead_provider.dart';
 import 'package:odoocrm/features/leads/presentation/providers/internal_note_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/assign_lead_sheet.dart';
+import 'package:odoocrm/features/leads/presentation/widgets/duplicate_lead_chip.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_actions_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_fab.dart';
 import 'package:odoocrm/core/services/whatsapp_service.dart';
@@ -63,6 +65,8 @@ class LeadDetailPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final leadAsync = ref.watch(leadDetailNotifierProvider(leadId));
+    final isDuplicate =
+        ref.watch(leadIsDuplicateProvider(leadId)).valueOrNull ?? false;
     final currentUser = ref.watch(authNotifierProvider).valueOrNull;
     final stagesAsync = ref.watch(stageNotifierProvider);
     ref.watch(leadCallLogProvider(leadId));
@@ -459,6 +463,10 @@ class LeadDetailPage extends HookConsumerWidget {
                                     height: 1.25,
                                   ),
                                 ),
+                                if (isDuplicate) ...[
+                                  const SizedBox(height: 8),
+                                  const DuplicateLeadChip(),
+                                ],
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 10,

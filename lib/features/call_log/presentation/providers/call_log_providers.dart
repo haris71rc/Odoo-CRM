@@ -3,6 +3,7 @@ import 'package:odoocrm/core/providers/core_providers.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/call_log/data/datasource/call_log_remote_datasource.dart';
 import 'package:odoocrm/features/call_log/data/repository/call_log_repository_impl.dart';
+import 'package:odoocrm/features/call_log/data/datasource/lead_call_sync_store.dart';
 import 'package:odoocrm/features/call_log/data/services/device_call_reader.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/utils/connected_call_rule.dart';
@@ -10,6 +11,7 @@ import 'package:odoocrm/features/call_log/domain/entities/call_status_option.dar
 import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart';
 import 'package:odoocrm/features/call_log/domain/repository/call_log_repository.dart';
 import 'package:odoocrm/features/call_log/domain/services/call_log_service.dart';
+import 'package:odoocrm/features/call_log/domain/utils/call_log_catch_up.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/growth_call_log_providers.dart';
 import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifier.dart';
@@ -40,6 +42,10 @@ CallLogService callLogService(Ref ref) {
 DeviceCallReader deviceCallReader(Ref ref) {
   return const DeviceCallReader();
 }
+
+final leadCallSyncStoreProvider = Provider<LeadCallSyncStore>((ref) {
+  return LeadCallSyncStore(ref.watch(secureStorageServiceProvider));
+});
 
 bool _hasNewOutboundCall(CallLog before, CallLog after) {
   final beforeOutbound = before.totalOutboundCalls ?? 0;
@@ -72,11 +78,23 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
     if (reader.isSupported) {
       final phone = lead.phone ?? lead.mobile;
       if (phone != null && phone.isNotEmpty) {
-        final statusOptions =
-            await ref.read(callStatusOptionsProvider(leadId).future);
+        final statusOptions = await ref.read(
+          callStatusOptionsProvider(leadId).future,
+        );
+        final remembered = await ref
+            .read(leadCallSyncStoreProvider)
+            .load(leadId);
+        // First sync reads the whole lead history so inbound totals stay a
+        // lifetime count. Later syncs start at the last saved call.
+        final since = remembered.seeded
+            ? CallLogCatchUp.querySince(
+                log: callLog,
+                leadCreatedAt: lead.createdDate,
+              )
+            : lead.createdDate;
         deviceCalls = await reader.findCallsForLead(
           phone: phone,
-          since: lead.createdDate,
+          since: since,
           statusOptions: statusOptions,
         );
       }
@@ -84,20 +102,27 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
 
     final previous = callLog;
     final currentUser = ref.read(authNotifierProvider).valueOrNull;
+    final syncStore = ref.read(leadCallSyncStoreProvider);
+    final remembered = await syncStore.load(leadId);
     final syncResult = await service.syncFromDevice(
       leadId: leadId,
       deviceCalls: deviceCalls,
       leadCreatedAt: lead.createdDate,
       salesperson: currentUser?.name,
+      remembered: remembered,
+      persistCursor: (cursor) => syncStore.save(leadId, cursor),
     );
 
     if (syncResult.isSuccess) {
       callLog = syncResult.valueOrNull ?? callLog;
-      final durationLanded = ConnectedCallRule.callWasMade(callLog) &&
+      final durationLanded =
+          ConnectedCallRule.callWasMade(callLog) &&
           !ConnectedCallRule.callWasMade(previous);
       if (_hasNewOutboundCall(previous, callLog) || durationLanded) {
-        final detailNotifier =
-            ref.read(leadDetailNotifierProvider(leadId).notifier);
+        final detailNotifier = ref.read(
+          leadDetailNotifierProvider(leadId).notifier,
+        );
+        detailNotifier.refreshDuplicateMarks();
         await detailNotifier.autoAssignCaller(currentUser?.id);
         // Picked + ≥3s → Connected (skips Follow-Up / later stages).
         await detailNotifier.autoMoveToConnected(callLog);
@@ -113,8 +138,9 @@ Future<CallLog> leadCallLog(Ref ref, int leadId) async {
 /// Call Status tag options from Odoo `lead_properties` for this lead.
 @riverpod
 Future<List<CallStatusOption>> callStatusOptions(Ref ref, int leadId) async {
-  final result =
-      await ref.watch(callLogServiceProvider).getCallStatusOptions(leadId);
+  final result = await ref
+      .watch(callLogServiceProvider)
+      .getCallStatusOptions(leadId);
   return result.when(
     success: (options) => options,
     failure: (_) => const [

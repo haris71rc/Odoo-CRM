@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:odoocrm/core/providers/core_providers.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
+import 'package:odoocrm/features/call_log/data/datasource/call_log_remote_datasource.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
 import 'package:odoocrm/features/leads/data/datasource/lead_remote_datasource.dart';
+import 'package:odoocrm/features/leads/presentation/providers/lead_search.dart';
 import 'package:odoocrm/features/leads/data/repository/lead_repository_impl.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_date_filter.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
@@ -21,8 +23,13 @@ enum LeadPipelineTab { all, mine, followup, won, lost }
 
 @Riverpod(keepAlive: true)
 LeadRepository leadRepository(Ref ref) {
+  final dio = ref.watch(dioClientProvider);
   return LeadRepositoryImpl(
-    datasource: LeadRemoteDatasource(ref.watch(dioClientProvider)),
+    datasource: LeadRemoteDatasource(dio),
+    callLogDatasource: CallLogRemoteDatasource(
+      dioClient: dio,
+      secureStorage: ref.watch(secureStorageServiceProvider),
+    ),
   );
 }
 
@@ -360,110 +367,145 @@ class LeadFilterNotifier extends _$LeadFilterNotifier {
   }
 }
 
+/// Returns null when the current filters match no leads.
+///
+/// [watch] subscribes the caller to filter changes. Duplicate detection reads
+/// the latest filters after the lead list reloads, without a second subscription.
+Future<LeadSearchParams?> resolveLeadSearchParams(
+  Ref ref, {
+  bool watch = true,
+}) async {
+  final serverKey = watch
+      ? ref.watch(leadFilterNotifierProvider.select((f) => f.serverFilterKey))
+      : ref.read(leadFilterNotifierProvider).serverFilterKey;
+  final currentUserId = watch
+      ? ref.watch(authNotifierProvider.select((a) => a.valueOrNull?.id))
+      : ref.read(authNotifierProvider).valueOrNull?.id;
+
+  if (currentUserId == null) return null;
+
+  var range = LeadDateRange.resolve(
+    filter: serverKey.dateFilter,
+    customStart: serverKey.customStartDate,
+    customEnd: serverKey.customEndDate,
+  );
+
+  var assignedUserId = serverKey.assignedUserId;
+
+  // Assigned to me today → logged-in user + create_date = today.
+  if (serverKey.todayMine) {
+    assignedUserId = currentUserId;
+    range = LeadDateRange.today();
+  }
+
+  List<int> excludeStageIds = const [];
+  int? stageId = serverKey.stageId;
+
+  if (serverKey.untouched || serverKey.openOnly) {
+    final stages = watch
+        ? await ref.watch(stageNotifierProvider.future)
+        : await ref.read(stageNotifierProvider.future);
+
+    if (serverKey.untouched) {
+      stageId = LeadListFilters.findNewProspectStageId(stages);
+      if (stageId == null) return null;
+    }
+
+    if (serverKey.openOnly) {
+      excludeStageIds = stages
+          .where(
+            (s) =>
+                s.isWon == true ||
+                LeadListFilters.isWon(s.name) ||
+                LeadListFilters.isLost(s.name),
+          )
+          .map((s) => s.id)
+          .toList();
+    }
+  }
+
+  int? excludePaidAdminId;
+  List<int> excludePaidStageIds = const [];
+  if (serverKey.paid) {
+    final users = watch
+        ? await ref.watch(usersNotifierProvider.future)
+        : await ref.read(usersNotifierProvider.future);
+    final adminId = LeadListFilters.findAdministratorUserId(users);
+    if (adminId != null) {
+      final stages = watch
+          ? await ref.watch(stageNotifierProvider.future)
+          : await ref.read(stageNotifierProvider.future);
+      final stageIds = LeadListFilters.findWonOrLostStageIds(stages);
+      if (stageIds.isNotEmpty) {
+        excludePaidAdminId = adminId;
+        excludePaidStageIds = stageIds;
+      }
+    }
+  }
+
+  List<int> tagIds = const [];
+  if (serverKey.temperatureTags.isNotEmpty) {
+    try {
+      if (watch) {
+        await ref.watch(leadTemperatureTagsNotifierProvider.future);
+      } else {
+        await ref.read(leadTemperatureTagsNotifierProvider.future);
+      }
+    } catch (_) {
+      // Tag metadata unavailable — skip tag domain rather than crashing.
+    }
+    tagIds = ref
+        .read(leadTemperatureTagsNotifierProvider.notifier)
+        .resolveIds(serverKey.temperatureTags);
+    if (tagIds.isEmpty) return null;
+  }
+
+  // Follow-up stays in the result even when a create-date filter is on.
+  // Other tabs drop those out-of-range follow-ups locally.
+  List<int> dateExemptStageIds = const [];
+  if (range != null) {
+    final stages = watch
+        ? await ref.watch(stageNotifierProvider.future)
+        : await ref.read(stageNotifierProvider.future);
+    dateExemptStageIds = LeadListFilters.findFollowUpStageIds(stages);
+  }
+
+  return LeadSearchParams(
+    startDate: range?.start,
+    endDate: range?.end,
+    assignedUserId: assignedUserId,
+    stageId: stageId,
+    openOnly: serverKey.openOnly,
+    excludeStageIds: excludeStageIds,
+    excludePaidAdminId: excludePaidAdminId,
+    excludePaidStageIds: excludePaidStageIds,
+    tagIds: tagIds,
+    dateExemptStageIds: dateExemptStageIds,
+  );
+}
+
 @Riverpod(keepAlive: true)
 class LeadNotifier extends _$LeadNotifier {
   @override
   FutureOr<List<LeadEntity>> build() async {
-    final serverKey = ref.watch(
-      leadFilterNotifierProvider.select((f) => f.serverFilterKey),
-    );
-    final currentUserId = ref.watch(
-      authNotifierProvider.select((a) => a.valueOrNull?.id),
-    );
-    final repository = ref.watch(leadRepositoryProvider);
+    final params = await resolveLeadSearchParams(ref);
+    if (params == null) return const [];
 
-    if (currentUserId == null) return const [];
-
-    var range = LeadDateRange.resolve(
-      filter: serverKey.dateFilter,
-      customStart: serverKey.customStartDate,
-      customEnd: serverKey.customEndDate,
-    );
-
-    var assignedUserId = serverKey.assignedUserId;
-
-    // Assigned to me today → logged-in user + create_date = today.
-    if (serverKey.todayMine) {
-      assignedUserId = currentUserId;
-      range = LeadDateRange.today();
-    }
-
-    List<int> excludeStageIds = const [];
-    int? stageId = serverKey.stageId;
-
-    if (serverKey.untouched || serverKey.openOnly) {
-      final stages = await ref.watch(stageNotifierProvider.future);
-
-      if (serverKey.untouched) {
-        // Untouched = still in New Prospect / New Prospects stage.
-        stageId = LeadListFilters.findNewProspectStageId(stages);
-        if (stageId == null) return const [];
-      }
-
-      if (serverKey.openOnly) {
-        excludeStageIds = stages
-            .where(
-              (s) =>
-                  s.isWon == true ||
-                  LeadListFilters.isWon(s.name) ||
-                  LeadListFilters.isLost(s.name),
-            )
-            .map((s) => s.id)
-            .toList();
-      }
-    }
-
-    int? excludePaidAdminId;
-    List<int> excludePaidStageIds = const [];
-    if (serverKey.paid) {
-      final users = await ref.watch(usersNotifierProvider.future);
-      final adminId = LeadListFilters.findAdministratorUserId(users);
-      if (adminId != null) {
-        final stages = await ref.watch(stageNotifierProvider.future);
-        final stageIds = LeadListFilters.findWonOrLostStageIds(stages);
-        if (stageIds.isNotEmpty) {
-          excludePaidAdminId = adminId;
-          excludePaidStageIds = stageIds;
-        }
-      }
-    }
-
-    List<int> tagIds = const [];
-    if (serverKey.temperatureTags.isNotEmpty) {
-      try {
-        await ref.watch(leadTemperatureTagsNotifierProvider.future);
-      } catch (_) {
-        // Tag metadata unavailable — skip tag domain rather than crashing.
-      }
-      tagIds = ref
-          .read(leadTemperatureTagsNotifierProvider.notifier)
-          .resolveIds(serverKey.temperatureTags);
-      // Selected tags exist in state but none resolved → empty result.
-      if (tagIds.isEmpty) return const [];
-    }
-
-    // Follow-up stays in the result even when a create-date filter is on.
-    // Other tabs drop those out-of-range follow-ups locally.
-    List<int> dateExemptStageIds = const [];
-    if (range != null) {
-      final stages = await ref.watch(stageNotifierProvider.future);
-      dateExemptStageIds = LeadListFilters.findFollowUpStageIds(stages);
-    }
-
-    final result = await repository.getLeads(
-      startDate: range?.start,
-      endDate: range?.end,
-      assignedUserId: assignedUserId,
-      stageId: stageId,
-      // priorityOnly: serverKey.priorityOnly, // disabled
-      priorityOnly: false,
-      openOnly: serverKey.openOnly,
-      excludeStageIds: excludeStageIds,
-      excludePaidAdminId: excludePaidAdminId,
-      excludePaidStageIds: excludePaidStageIds,
-      tagIds: tagIds,
-      dateExemptStageIds: dateExemptStageIds,
-    );
+    final result = await ref
+        .watch(leadRepositoryProvider)
+        .getLeads(
+          startDate: params.startDate,
+          endDate: params.endDate,
+          assignedUserId: params.assignedUserId,
+          stageId: params.stageId,
+          priorityOnly: false,
+          openOnly: params.openOnly,
+          excludeStageIds: params.excludeStageIds,
+          excludePaidAdminId: params.excludePaidAdminId,
+          excludePaidStageIds: params.excludePaidStageIds,
+          tagIds: params.tagIds,
+          dateExemptStageIds: params.dateExemptStageIds,
+        );
 
     return result.when(
       success: (leads) => leads,

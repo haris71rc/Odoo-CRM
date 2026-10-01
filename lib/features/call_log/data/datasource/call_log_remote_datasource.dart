@@ -15,9 +15,9 @@ class CallLogRemoteDatasource {
     required DioClient dioClient,
     required SecureStorageService secureStorage,
     LeadPropertiesParser parser = const LeadPropertiesParser(),
-  })  : _dioClient = dioClient,
-        _secureStorage = secureStorage,
-        _parser = parser;
+  }) : _dioClient = dioClient,
+       _secureStorage = secureStorage,
+       _parser = parser;
 
   final DioClient _dioClient;
   final SecureStorageService _secureStorage;
@@ -38,6 +38,40 @@ class CallLogRemoteDatasource {
   Future<CallLog> fetchCallLog(int leadId) async {
     final record = await _readLeadRecord(leadId);
     return _parser.parse(record['lead_properties']).callLog;
+  }
+
+  /// Call logs for [leadIds], keyed by lead id. Empty input skips the request.
+  Future<Map<int, CallLog>> fetchCallLogs(List<int> leadIds) async {
+    if (leadIds.isEmpty) return {};
+
+    final request = JsonRpcRequest.callKw(
+      model: 'crm.lead',
+      method: 'read',
+      args: [
+        leadIds,
+        ['id', 'lead_properties'],
+      ],
+    );
+
+    final response = await _dioClient.postJsonRpc(
+      AppConstants.callKwPath,
+      request,
+    );
+
+    final result = response['result'];
+    if (result is! List) {
+      throw const ParsingFailure('Unexpected call log response');
+    }
+
+    final logs = <int, CallLog>{};
+    for (final item in result) {
+      if (item is! Map) continue;
+      final record = Map<String, dynamic>.from(item);
+      final id = record['id'];
+      if (id is! int) continue;
+      logs[id] = _parser.parse(record['lead_properties']).callLog;
+    }
+    return logs;
   }
 
   Future<CallLogValidationSnapshot> fetchValidationSnapshot(int leadId) async {

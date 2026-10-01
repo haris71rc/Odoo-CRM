@@ -21,14 +21,60 @@ class _LastCallCardState extends ConsumerState<LastCallCard> {
   Future<void> _sync() async {
     if (_isSyncing) return;
     setState(() => _isSyncing = true);
-    ref.invalidate(leadCallLogProvider(widget.leadId));
+    final before =
+        _cached ?? ref.read(leadCallLogProvider(widget.leadId)).valueOrNull;
     try {
-      await ref.read(leadCallLogProvider(widget.leadId).future);
+      final reader = ref.read(deviceCallReaderProvider);
+      if (reader.isSupported) {
+        final granted = await reader.ensurePermission();
+        if (!granted) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Phone & Call Log permission is required to sync calls.',
+              ),
+            ),
+          );
+          return;
+        }
+      }
+
+      ref.invalidate(leadCallLogProvider(widget.leadId));
+      final after = await ref.read(leadCallLogProvider(widget.leadId).future);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_syncMessage(before, after))),
+      );
     } catch (_) {
-      // Keep cached data; error UI handled below when no cache.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not sync the call log. Try again.'),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isSyncing = false);
     }
+  }
+
+  String _syncMessage(CallLog? before, CallLog after) {
+    final outbound =
+        (after.totalOutboundCalls ?? 0) - (before?.totalOutboundCalls ?? 0);
+    final inbound =
+        (after.totalInboundCalls ?? 0) - (before?.totalInboundCalls ?? 0);
+    final added = (outbound > 0 ? outbound : 0) + (inbound > 0 ? inbound : 0);
+    if (added > 0) {
+      return added == 1
+          ? 'Synced 1 call from the phone'
+          : 'Synced $added calls from the phone';
+    }
+    final refreshed = before?.duration != after.duration ||
+        before?.status != after.status ||
+        before?.lastCallDate != after.lastCallDate ||
+        before?.totalDuration != after.totalDuration;
+    if (refreshed) return 'Call log updated from the phone';
+    return 'Call log is up to date';
   }
 
   @override

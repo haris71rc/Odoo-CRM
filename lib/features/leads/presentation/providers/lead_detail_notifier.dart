@@ -2,6 +2,7 @@ import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/domain/utils/connected_call_rule.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
+import 'package:odoocrm/features/leads/presentation/providers/duplicate_lead_provider.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
@@ -97,16 +98,15 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     return true;
   }
 
-  Future<String?> updateStage(
-    int stageId, {
-    String? targetStageName,
-  }) async {
+  Future<String?> updateStage(int stageId, {String? targetStageName}) async {
     final lead = state.valueOrNull;
     if (lead != null && lead.stage?.id == stageId) {
       return null;
     }
 
-    final validation = await ref.read(callLogServiceProvider).validateStageChange(
+    final validation = await ref
+        .read(callLogServiceProvider)
+        .validateStageChange(
           leadId: leadId,
           currentStageName: lead?.stage?.name,
           targetStageName: targetStageName,
@@ -128,6 +128,7 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     if (result.isFailure) return result.failureOrNull!.message;
 
     ref.invalidate(leadCallLogProvider(leadId));
+    ref.invalidate(duplicateLeadIdsProvider);
     ref.invalidateSelf();
     await future;
     return null;
@@ -149,7 +150,13 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
 
   Future<void> refresh() async {
     ref.invalidate(leadCallLogProvider(leadId));
+    ref.invalidate(duplicateLeadIdsProvider);
     ref.invalidateSelf();
     await future;
+  }
+
+  /// Reloads duplicate chips after an outbound call is stored on this lead.
+  void refreshDuplicateMarks() {
+    ref.invalidate(duplicateLeadIdsProvider);
   }
 }

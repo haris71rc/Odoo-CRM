@@ -9,6 +9,7 @@ import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
+import 'package:odoocrm/features/leads/presentation/providers/duplicate_lead_provider.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/utils/lead_list_filters.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/lead_card.dart';
@@ -26,6 +27,8 @@ class LeadListPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final leadsAsync = ref.watch(leadNotifierProvider);
+    final duplicateIds =
+        ref.watch(duplicateLeadIdsProvider).valueOrNull ?? const <int>{};
     final filter = ref.watch(leadFilterNotifierProvider);
     final currentUser = ref.watch(authNotifierProvider).valueOrNull;
     final stagesAsync = ref.watch(stageNotifierProvider);
@@ -260,6 +263,7 @@ class LeadListPage extends HookConsumerWidget {
                             hasFollowUp: LeadListFilters.isFollowUp(
                               lead.stage?.name,
                             ),
+                            isDuplicate: duplicateIds.contains(lead.id),
                             onTap: () => context.push('/leads/${lead.id}'),
                             onWon: () => markStage(lead, won: true),
                             onLost: () => markStage(lead, won: false),

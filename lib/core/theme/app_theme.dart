@@ -41,6 +41,9 @@ class AppTheme {
   static const Color followUpBg = Color(0xFFFFF8E8);
   static const Color followUpBorder = Color(0xFFF3D9A6);
   static const Color followUpFg = Color(0xFF8A5A08);
+  static const Color duplicateBg = Color(0xFFFFF6ED);
+  static const Color duplicateBorder = Color(0xFFF9DBAF);
+  static const Color duplicateFg = Color(0xFFB54708);
 
   static TextStyle mono({
     double fontSize = 12.5,

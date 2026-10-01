@@ -23,4 +23,7 @@ class AppConstants {
 
   /// CRM-initiated outbound dial waiting for the Android call log.
   static const String pendingOutboundDialKey = 'pending_outbound_dial_v1';
+
+  /// Per-lead Android call rows already applied to the Odoo call log.
+  static const String leadCallSyncCursorKey = 'lead_call_sync_cursor_v1';
 }

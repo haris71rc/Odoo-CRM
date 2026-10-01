@@ -27,4 +27,25 @@ abstract class LeadRepository {
     required int leadId,
     required String description,
   });
+
+  /// Leads that share a number with one the salesperson already called.
+  ///
+  /// Uses the same assignee, stage, and tag filters as [getLeads], without the
+  /// create-date window, so a call outside the current range still counts.
+  Future<Result<Set<int>>> findDuplicateLeadIds({
+    int? assignedUserId,
+    int? stageId,
+    bool openOnly = false,
+    List<int> excludeStageIds = const [],
+    int? excludePaidAdminId,
+    List<int> excludePaidStageIds = const [],
+    List<int> tagIds = const [],
+  });
+
+  /// Whether [leadId] is a duplicate of another lead with the same number.
+  Future<Result<bool>> isDuplicateLead({
+    required int leadId,
+    String? phone,
+    String? mobile,
+  });
 }
