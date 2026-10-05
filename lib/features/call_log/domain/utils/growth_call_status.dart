@@ -1,13 +1,15 @@
 /// Odoo "Result call" values accepted by the Growth `/calls/log` API.
 ///
-/// Device auto-sync only produces [picked] / [dnp]. Positive / Negative /
-/// Wrong number are pass-through when already set (e.g. manual UI).
+/// Device auto-sync produces [picked], [dnp], and [missed]. Positive /
+/// Negative / Wrong number are pass-through when already set (e.g. manual UI).
+/// Incoming missed stays [missed]. Outgoing missed is [dnp].
 abstract final class GrowthCallStatus {
   static const positive = 'positive';
   static const negative = 'negative';
   static const wrongNumber = 'wrong_number';
   static const picked = 'picked';
   static const dnp = 'dnp';
+  static const missed = 'missed';
 
   static const allowed = {
     positive,
@@ -15,13 +17,19 @@ abstract final class GrowthCallStatus {
     wrongNumber,
     picked,
     dnp,
+    missed,
   };
 
   /// Maps legacy / device statuses onto the Result-call set.
   ///
-  /// Unrecognized values fall back to [picked] when [durationSeconds] > 0,
-  /// otherwise [dnp].
-  static String normalize(String? status, {int durationSeconds = 0}) {
+  /// [direction] decides a missed call: inbound stays [missed], outbound
+  /// becomes [dnp]. Unrecognized values fall back to [picked] when
+  /// [durationSeconds] > 0, otherwise [dnp].
+  static String normalize(
+    String? status, {
+    int durationSeconds = 0,
+    String? direction,
+  }) {
     final n = (status ?? '')
         .trim()
         .toLowerCase()
@@ -39,10 +47,13 @@ abstract final class GrowthCallStatus {
       return picked;
     }
 
+    if (n == missed) {
+      return direction == 'outbound' ? dnp : missed;
+    }
+
     if (n == dnp ||
         n == 'not_picked' ||
         n == 'notpicked' ||
-        n == 'missed' ||
         n == 'busy' ||
         n == 'hanged_up' ||
         n == 'hangedup' ||

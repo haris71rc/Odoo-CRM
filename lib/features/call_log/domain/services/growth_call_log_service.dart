@@ -178,6 +178,7 @@ class GrowthCallLogService {
       final status = GrowthCallStatus.normalize(
         callEvent.status,
         durationSeconds: durationSeconds,
+        direction: normalizedDirection,
       );
 
       final request = GrowthCallLogRequest(

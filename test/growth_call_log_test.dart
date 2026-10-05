@@ -26,7 +26,9 @@ void main() {
     });
 
     test('maps legacy / device statuses onto Result call set', () {
-      expect(GrowthCallStatus.normalize('missed'), 'dnp');
+      expect(GrowthCallStatus.normalize('missed', direction: 'inbound'), 'missed');
+      expect(GrowthCallStatus.normalize('missed', direction: 'outbound'), 'dnp');
+      expect(GrowthCallStatus.normalize('missed'), 'missed');
       expect(GrowthCallStatus.normalize('busy'), 'dnp');
       expect(GrowthCallStatus.normalize('hanged_up'), 'dnp');
       expect(GrowthCallStatus.normalize('call_failed'), 'dnp');
@@ -709,7 +711,7 @@ void main() {
       final body = datasource.requests.single.toJson();
       expect(body['lead_id'], isNull);
       expect(body['direction'], 'inbound');
-      expect(body['status'], 'dnp');
+      expect(body['status'], 'missed');
       expect(body['phone'], '9876543210');
       expect(
         body['call_id'],

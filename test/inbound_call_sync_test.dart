@@ -159,7 +159,7 @@ void main() {
       expect(datasource.requests.every((r) => r.leadId == null), isTrue);
       expect(datasource.requests.every((r) => r.direction == 'inbound'), isTrue);
       expect(datasource.requests.map((r) => r.status).toList(), [
-        'dnp',
+        'missed',
         'picked',
       ]);
 
