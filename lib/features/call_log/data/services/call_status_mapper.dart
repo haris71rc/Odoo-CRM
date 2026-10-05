@@ -22,6 +22,7 @@ class CallStatusMapper {
   String _deviceStatusHint(native.CallType? type, int durationSeconds) {
     switch (type) {
       case native.CallType.missed:
+      case native.CallType.voiceMail:
         return 'missed';
       case native.CallType.rejected:
       case native.CallType.blocked:
@@ -32,7 +33,6 @@ class CallStatusMapper {
       case native.CallType.incoming:
       case native.CallType.wifiIncoming:
         return durationSeconds > 0 ? 'picked' : 'missed';
-      case native.CallType.voiceMail:
       case native.CallType.answeredExternally:
       case native.CallType.unknown:
       case null:

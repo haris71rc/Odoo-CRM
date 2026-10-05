@@ -11,6 +11,7 @@ import 'package:odoocrm/features/call_log/domain/entities/device_call_event.dart
 import 'package:odoocrm/features/call_log/domain/entities/growth_call_log_request.dart';
 import 'package:odoocrm/features/call_log/domain/services/growth_call_log_service.dart';
 import 'package:odoocrm/features/call_log/domain/services/inbound_call_sync_service.dart';
+import 'package:odoocrm/features/call_log/domain/utils/inbound_lead_match.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -194,6 +195,67 @@ void main() {
       await growth.flushPending();
 
       expect(datasource.requests, isEmpty);
+    });
+
+    test('posts a missed call the cursor jumped over and attaches the lead',
+        () async {
+      await storage.write(key: 'session_id', value: 'sess-1');
+      await storage.write(key: 'app_tenant', value: 'digilawyer');
+      // Old first-run stamped the cursor at "now", after the missed call.
+      await syncStore.save(InboundCallSyncCursor.baselineAt(DateTime.now()));
+
+      final missedAt = DateTime.now().subtract(const Duration(minutes: 19));
+      reader.inboundEvents = [
+        DeviceCallEvent(
+          at: missedAt,
+          duration: '00:00',
+          status: 'missed',
+          isOutbound: false,
+          isInbound: true,
+          androidCallLogId: '456',
+          phoneNumber: '919876543210',
+        ),
+      ];
+
+      final resolving = InboundCallSyncService(
+        deviceCallReader: reader,
+        growthCallLogService: growth,
+        syncStore: syncStore,
+        resolveLeadId: (phone) async {
+          expect(phone, '919876543210');
+          return 22;
+        },
+      );
+
+      await resolving.syncIfNeeded(salesperson: 'Haris');
+      await growth.flushPending();
+
+      expect(datasource.requests, hasLength(1));
+      expect(datasource.requests.single.leadId, 22);
+      expect(datasource.requests.single.direction, 'inbound');
+      expect(datasource.requests.single.status, 'missed');
+      expect(datasource.requests.single.phone, '9876543210');
+    });
+  });
+
+  group('InboundLeadMatch', () {
+    test('picks the earliest lead that shares the caller number', () {
+      final id = InboundLeadMatch.pick(
+        phone: '+91 98765 43210',
+        leads: const [
+          InboundLeadCandidate(
+            id: 40,
+            phone: '9876543210',
+            createdDate: null,
+          ),
+          InboundLeadCandidate(
+            id: 90,
+            mobile: '+91 98765-43210',
+            createdDate: null,
+          ),
+        ],
+      );
+      expect(id, 40);
     });
   });
 }

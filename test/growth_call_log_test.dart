@@ -751,6 +751,36 @@ void main() {
 
       expect(datasource.requests, hasLength(1));
     });
+
+    test('reposts an acked inbound call once the lead is known', () async {
+      await storage.write(key: 'session_id', value: 'sess-1');
+      final datasource = _FakeGrowthDatasource();
+      final service = buildService(datasource);
+      final at = DateTime.utc(2026, 9, 11, 10, 0);
+      final event = CallLog(
+        lastCallDate: at,
+        duration: '00:00',
+        status: 'missed',
+      );
+
+      await service.enqueueInboundCall(
+        callEvent: event,
+        androidCallLogId: '456',
+        phoneNumber: '919876543210',
+      );
+      await service.flushPending();
+      await service.enqueueInboundCall(
+        callEvent: event,
+        leadId: 22,
+        androidCallLogId: '456',
+        phoneNumber: '919876543210',
+      );
+      await service.flushPending();
+
+      expect(datasource.requests, hasLength(2));
+      expect(datasource.requests.last.leadId, 22);
+      expect(datasource.requests.last.callId, datasource.requests.first.callId);
+    });
   });
 
   group('GrowthCallLogDatasource mapping', () {

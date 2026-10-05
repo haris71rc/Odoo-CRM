@@ -120,9 +120,17 @@ class GrowthCallLogService {
           CallLogDuration.parseToSeconds(callEvent.duration);
       final known = await _knownFingerprints();
 
-      final callId = effectiveLeadId != null
-          ? GrowthCallId.resolve(
-              leadId: effectiveLeadId,
+      // Inbound identity is the Android call-log row, even after a lead is
+      // attached. Lead-bucket ids would collapse two missed calls minutes apart.
+      final callId = normalizedDirection == 'inbound'
+          ? GrowthCallId.resolveDeviceInbound(
+              androidCallLogId: androidCallLogId,
+              phoneNumber: phoneNumber,
+              callAt: callAt,
+              durationSeconds: durationSeconds,
+            )
+          : GrowthCallId.resolve(
+              leadId: effectiveLeadId!,
               direction: normalizedDirection,
               callAt: callAt,
               known: [
@@ -141,22 +149,23 @@ class GrowthCallLogService {
                     callId: a.callId,
                   ),
               ],
-            )
-          : GrowthCallId.resolveDeviceInbound(
-              androidCallLogId: androidCallLogId,
-              phoneNumber: phoneNumber,
-              callAt: callAt,
-              durationSeconds: durationSeconds,
             );
 
       // Already accepted / queued for this real-world call.
       for (final ack in known.acked) {
         if (ack.callId == callId) {
-          _log(
-            'CallLogRetryQueue: skip already-acked call_id=${ack.callId} '
-            'lead_id=$effectiveLeadId',
-          );
-          return;
+          // A previous inbound post had no lead, so Odoo never showed it on
+          // the lead. Send the same call_id again now that the lead is known.
+          final attachLead = normalizedDirection == 'inbound' &&
+              ack.leadId == null &&
+              effectiveLeadId != null;
+          if (!attachLead) {
+            _log(
+              'CallLogRetryQueue: skip already-acked call_id=${ack.callId} '
+              'lead_id=$effectiveLeadId',
+            );
+            return;
+          }
         }
         if (effectiveLeadId != null &&
             ack.leadId == effectiveLeadId &&

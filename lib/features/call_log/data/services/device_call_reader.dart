@@ -284,12 +284,16 @@ class DeviceCallReader {
     return nextTs >= currentTs ? next : current;
   }
 
-  /// Incoming answered/wifi, plus missed/rejected (inbound intent).
+  /// Incoming answered/wifi, plus missed, rejected, and voicemail.
+  ///
+  /// A missed call that goes to voicemail is often stored as [voiceMail]
+  /// (the Phone app shows a mic on that row) rather than [missed].
   bool _isInboundLike(native.CallType? type) {
     return type == native.CallType.incoming ||
         type == native.CallType.wifiIncoming ||
         type == native.CallType.missed ||
-        type == native.CallType.rejected;
+        type == native.CallType.rejected ||
+        type == native.CallType.voiceMail;
   }
 
   bool _isOutbound(native.CallType? type) {
@@ -320,6 +324,7 @@ class DeviceCallReader {
   String _legacyMapStatus(native.CallType? type, int durationSeconds) {
     switch (type) {
       case native.CallType.missed:
+      case native.CallType.voiceMail:
         return 'missed';
       case native.CallType.rejected:
       case native.CallType.blocked:
@@ -330,7 +335,6 @@ class DeviceCallReader {
       case native.CallType.incoming:
       case native.CallType.wifiIncoming:
         return durationSeconds > 0 ? 'picked' : 'missed';
-      case native.CallType.voiceMail:
       case native.CallType.answeredExternally:
       case native.CallType.unknown:
       case null:

@@ -6,6 +6,9 @@ import 'package:odoocrm/features/call_log/data/datasource/inbound_call_sync_stor
 import 'package:odoocrm/features/call_log/data/services/device_call_reader.dart';
 import 'package:odoocrm/features/call_log/domain/services/growth_call_log_service.dart';
 import 'package:odoocrm/features/call_log/domain/services/inbound_call_sync_service.dart';
+import 'package:odoocrm/features/call_log/domain/utils/inbound_lead_match.dart';
+import 'package:odoocrm/features/leads/data/datasource/lead_remote_datasource.dart';
+import 'package:odoocrm/features/leads/domain/utils/duplicate_lead_matcher.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'growth_call_log_providers.g.dart';
@@ -33,6 +36,25 @@ InboundCallSyncService inboundCallSyncService(Ref ref) {
     deviceCallReader: const DeviceCallReader(),
     growthCallLogService: ref.watch(growthCallLogServiceProvider),
     syncStore: ref.watch(inboundCallSyncStoreProvider),
+    resolveLeadId: (phone) async {
+      final key = DuplicateLeadMatcher.keyOf(phone);
+      if (key == null) return null;
+      final snapshots = await LeadRemoteDatasource(
+        ref.read(dioClientProvider),
+      ).searchByPhoneKeys([key]);
+      return InboundLeadMatch.pick(
+        phone: phone,
+        leads: [
+          for (final snapshot in snapshots)
+            InboundLeadCandidate(
+              id: snapshot.id,
+              phone: snapshot.phone,
+              mobile: snapshot.mobile,
+              createdDate: snapshot.createdDate,
+            ),
+        ],
+      );
+    },
   );
 }
 
