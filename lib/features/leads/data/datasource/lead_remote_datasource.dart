@@ -243,8 +243,9 @@ class LeadRemoteDatasource {
     return [for (var i = 0; i < clauses.length - 1; i++) '|', ...clauses];
   }
 
-  /// Create-date clause. Follow-up stages are OR'd in so that section is not
-  /// limited by the selected date range.
+  /// Odoo stores create_date in UTC. Convert local calendar-day boundaries
+  /// before formatting the naive UTC timestamps used by its domain.
+  /// Follow-up stages are OR'd in so they are not limited by the date range.
   static List<dynamic> _createDateDomain({
     DateTime? startDate,
     DateTime? endDate,
@@ -255,7 +256,11 @@ class LeadRemoteDatasource {
     final parts = <dynamic>[];
     if (startDate != null && endDate != null) parts.add('&');
     if (startDate != null) {
-      parts.add(['create_date', '>=', DateFormatters.toApiDate(startDate)]);
+      parts.add([
+        'create_date',
+        '>=',
+        DateFormatters.toApiDate(startDate.toUtc()),
+      ]);
     }
     if (endDate != null) {
       final endOfDay = DateTime(
@@ -266,7 +271,11 @@ class LeadRemoteDatasource {
         59,
         59,
       );
-      parts.add(['create_date', '<=', DateFormatters.toApiDate(endOfDay)]);
+      parts.add([
+        'create_date',
+        '<=',
+        DateFormatters.toApiDate(endOfDay.toUtc()),
+      ]);
     }
 
     if (dateExemptStageIds.isEmpty) return parts;
