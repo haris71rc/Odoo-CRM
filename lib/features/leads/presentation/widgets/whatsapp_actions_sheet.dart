@@ -6,6 +6,7 @@ import 'package:odoocrm/core/services/whatsapp_service.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/core/utils/phone_number_utils.dart';
 import 'package:odoocrm/core/widgets/whatsapp_icon.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 
 /// Shows the WhatsApp quick-actions sheet for [phone].
 Future<void> showWhatsAppActionsSheet({
@@ -19,10 +20,7 @@ Future<void> showWhatsAppActionsSheet({
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => WhatsAppActionsSheet(
-      phone: phone,
-      service: service,
-    ),
+    builder: (_) => WhatsAppActionsSheet(phone: phone, service: service),
   );
 }
 
@@ -79,29 +77,45 @@ class WhatsAppActionsSheet extends StatelessWidget {
                 label: 'WhatsApp Call',
                 enabled: _hasPhone,
                 onTap: () {
-                  final messenger = ScaffoldMessenger.of(context);
+                  final noticeOverlay = Overlay.of(context, rootOverlay: true);
+                  final topInset = MediaQuery.viewPaddingOf(context).top;
                   Navigator.of(context).pop();
                   // Fire after the sheet closes so we don't fight its animation.
-                  Future<void>.delayed(const Duration(milliseconds: 180), () async {
-                    final result = await service.startCall(phone ?? '');
-                    final message = service.messageFor(result);
-                    if (message == null) return;
-                    messenger.showSnackBar(SnackBar(content: Text(message)));
-                  });
+                  Future<void>.delayed(
+                    const Duration(milliseconds: 180),
+                    () async {
+                      final result = await service.startCall(phone ?? '');
+                      final message = service.messageFor(result);
+                      if (message == null) return;
+                      if (noticeOverlay.mounted) {
+                        showTopNoticeInOverlay(
+                          noticeOverlay,
+                          topInset,
+                          message,
+                        );
+                      }
+                    },
+                  );
                 },
               ),
             _WhatsAppActionTile(
               label: 'WhatsApp Message',
               enabled: _hasPhone,
               onTap: () {
-                final messenger = ScaffoldMessenger.of(context);
+                final noticeOverlay = Overlay.of(context, rootOverlay: true);
+                final topInset = MediaQuery.viewPaddingOf(context).top;
                 Navigator.of(context).pop();
-                Future<void>.delayed(const Duration(milliseconds: 180), () async {
-                  final result = await service.openChat(phone ?? '');
-                  final message = service.messageFor(result);
-                  if (message == null) return;
-                  messenger.showSnackBar(SnackBar(content: Text(message)));
-                });
+                Future<void>.delayed(
+                  const Duration(milliseconds: 180),
+                  () async {
+                    final result = await service.openChat(phone ?? '');
+                    final message = service.messageFor(result);
+                    if (message == null) return;
+                    if (noticeOverlay.mounted) {
+                      showTopNoticeInOverlay(noticeOverlay, topInset, message);
+                    }
+                  },
+                );
               },
             ),
           ],
@@ -135,11 +149,7 @@ class _WhatsAppActionTile extends StatelessWidget {
       ),
       title: Text(
         label,
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: fg),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

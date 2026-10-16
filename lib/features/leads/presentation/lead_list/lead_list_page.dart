@@ -7,6 +7,7 @@ import 'package:odoocrm/core/utils/initials.dart';
 import 'package:odoocrm/core/widgets/empty_view.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
 import 'package:odoocrm/features/leads/presentation/providers/duplicate_lead_provider.dart';
@@ -47,10 +48,10 @@ class LeadListPage extends HookConsumerWidget {
         }
       }
       if (target == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(won ? 'Won stage not found' : 'Lost stage not found'),
-          ),
+        showTopNotice(
+          context,
+          won ? 'Won stage not found' : 'Lost stage not found',
+          kind: TopNoticeKind.error,
         );
         return;
       }
@@ -63,10 +64,10 @@ class LeadListPage extends HookConsumerWidget {
             targetStageName: target.name,
           );
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error ?? (won ? 'Marked as Won' : 'Marked as Lost')),
-        ),
+      showTopNotice(
+        context,
+        error ?? (won ? 'Marked as Won' : 'Marked as Lost'),
+        kind: error == null ? TopNoticeKind.success : TopNoticeKind.error,
       );
     }
 

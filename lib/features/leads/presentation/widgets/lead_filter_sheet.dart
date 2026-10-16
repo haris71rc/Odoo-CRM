@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_date_filter.dart';
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/stages/presentation/providers/stage_notifier.dart';
@@ -9,9 +10,7 @@ import 'package:odoocrm/features/tags/domain/entities/lead_temperature_tag.dart'
 import 'package:odoocrm/features/tags/presentation/providers/tag_providers.dart';
 import 'package:odoocrm/features/users/presentation/providers/users_notifier.dart';
 
-Future<void> showLeadFilterSheet({
-  required BuildContext context,
-}) {
+Future<void> showLeadFilterSheet({required BuildContext context}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -112,8 +111,10 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
   void _apply() {
     if (_dateFilter == LeadDateFilter.custom &&
         (_customStart == null || _customEnd == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select a custom date range')),
+      showTopNotice(
+        context,
+        'Select a custom date range',
+        kind: TopNoticeKind.error,
       );
       return;
     }
@@ -142,12 +143,14 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
       stageName = null;
     }
 
-    ref.read(leadFilterNotifierProvider.notifier).applyFilters(
+    ref
+        .read(leadFilterNotifierProvider.notifier)
+        .applyFilters(
           dateFilter: dateFilter,
-          customStartDate:
-              dateFilter == LeadDateFilter.custom ? customStart : null,
-          customEndDate:
-              dateFilter == LeadDateFilter.custom ? customEnd : null,
+          customStartDate: dateFilter == LeadDateFilter.custom
+              ? customStart
+              : null,
+          customEndDate: dateFilter == LeadDateFilter.custom ? customEnd : null,
           assignedUserId: userId,
           assignedUserName: userName,
           stageId: stageId,
@@ -305,7 +308,10 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
                   ),
                   temperatureTagsAsync.when(
                     loading: () => const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
                       child: LinearProgressIndicator(minHeight: 2),
                     ),
                     error: (_, _) => const Padding(
@@ -321,8 +327,7 @@ class _LeadFilterSheetState extends ConsumerState<LeadFilterSheet> {
                     data: (tags) {
                       final available = <LeadTemperatureTag>{};
                       for (final tag in tags) {
-                        final mapped =
-                            LeadTemperatureTag.fromApiName(tag.name);
+                        final mapped = LeadTemperatureTag.fromApiName(tag.name);
                         if (mapped != null) available.add(mapped);
                       }
 
@@ -547,8 +552,7 @@ class _AssigneeStageSection extends ConsumerWidget {
             loading: () => const LinearProgressIndicator(minHeight: 2),
             error: (_, _) => const Text('Unable to load users'),
             data: (users) {
-              final selected =
-                  users.any((u) => u.id == userId) ? userId : null;
+              final selected = users.any((u) => u.id == userId) ? userId : null;
               return DropdownButtonFormField<int?>(
                 key: ValueKey('filter-user-$selected'),
                 initialValue: selected,
@@ -583,14 +587,18 @@ class _AssigneeStageSection extends ConsumerWidget {
             loading: () => const LinearProgressIndicator(minHeight: 2),
             error: (_, _) => const Text('Unable to load stages'),
             data: (stages) {
-              final selected =
-                  stages.any((s) => s.id == stageId) ? stageId : null;
+              final selected = stages.any((s) => s.id == stageId)
+                  ? stageId
+                  : null;
               return DropdownButtonFormField<int?>(
                 key: ValueKey('filter-stage-$selected'),
                 initialValue: selected,
                 isExpanded: true,
                 items: [
-                  const DropdownMenuItem(value: null, child: Text('All Stages')),
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('All Stages'),
+                  ),
                   ...stages.map(
                     (s) => DropdownMenuItem(value: s.id, child: Text(s.name)),
                   ),

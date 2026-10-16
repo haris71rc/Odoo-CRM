@@ -6,6 +6,7 @@ import 'package:odoocrm/core/providers/tenant_notifier.dart';
 import 'package:odoocrm/core/services/app_permission.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/core/utils/initials.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 
 class ProfilePage extends ConsumerStatefulWidget {
@@ -44,12 +45,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
 
     if (!enabled && item.granted) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Open system settings to turn this permission off.',
-          ),
-        ),
+      showTopNotice(
+        context,
+        'Open system settings to turn this permission off.',
       );
     }
 
@@ -61,14 +59,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
     final statuses = ref.read(appPermissionsNotifierProvider).valueOrNull;
     final updated = statuses?.where((s) => s.kind == item.kind).firstOrNull;
     if (enabled && updated != null && !updated.granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            updated.permanentlyDenied
-                ? 'Permission blocked. Enable ${item.kind.title} in Settings.'
-                : '${item.kind.title} was not granted.',
-          ),
-        ),
+      showTopNotice(
+        context,
+        updated.permanentlyDenied
+            ? 'Permission blocked. Enable ${item.kind.title} in Settings.'
+            : '${item.kind.title} was not granted.',
+        kind: TopNoticeKind.error,
       );
     }
   }
@@ -133,16 +129,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                     Text(
                       name,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.02,
-                          ),
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.02,
+                      ),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       'Telecaller · Inside Sales',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppTheme.textBody,
-                          ),
+                        color: AppTheme.textBody,
+                      ),
                     ),
                   ],
                 ),
@@ -159,8 +155,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
             child: Column(
               children: [
                 for (var i = 0; i < rows.length; i++) ...[
-                  if (i > 0)
-                    const Divider(height: 1, color: Color(0xFFF2F4F7)),
+                  if (i > 0) const Divider(height: 1, color: Color(0xFFF2F4F7)),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 15,
@@ -208,9 +203,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
           const SizedBox(height: 8),
           Text(
             'Enable permissions denied during setup so calls and WhatsApp work correctly.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppTheme.textBody,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppTheme.textBody),
           ),
           const SizedBox(height: 10),
           Container(
@@ -238,8 +233,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                 ),
               ),
               data: (statuses) {
-                final items =
-                    statuses.where((status) => status.supported).toList();
+                final items = statuses
+                    .where((status) => status.supported)
+                    .toList();
                 if (items.isEmpty) {
                   return const Padding(
                     padding: EdgeInsets.all(16),
@@ -291,10 +287,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
 }
 
 class _PermissionToggleRow extends StatelessWidget {
-  const _PermissionToggleRow({
-    required this.status,
-    required this.onChanged,
-  });
+  const _PermissionToggleRow({required this.status, required this.onChanged});
 
   final AppPermissionStatus status;
   final ValueChanged<bool> onChanged;

@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:odoocrm/core/error/failures.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/activities/domain/entities/activity_type_entity.dart';
 import 'package:odoocrm/features/activities/presentation/providers/activity_notifier.dart';
 import 'package:odoocrm/features/auth/domain/entities/user_entity.dart' as auth;
@@ -89,7 +90,8 @@ class ScheduleActivityDialog extends HookConsumerWidget {
         orElse: () => types.first,
       );
 
-      final effectiveUserId = selectedUserId.value ??
+      final effectiveUserId =
+          selectedUserId.value ??
           (users.any((u) => u.id == currentUser.id)
               ? currentUser.id
               : users.first.id);
@@ -108,17 +110,12 @@ class ScheduleActivityDialog extends HookConsumerWidget {
               value: selectedType.id,
               isExpanded: true,
               menuMaxHeight: 240,
-              decoration: const InputDecoration(
-                labelText: 'Activity Type',
-              ),
+              decoration: const InputDecoration(labelText: 'Activity Type'),
               items: types
                   .map(
                     (type) => DropdownMenuItem<int>(
                       value: type.id,
-                      child: Text(
-                        type.name,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text(type.name, overflow: TextOverflow.ellipsis),
                     ),
                   )
                   .toList(),
@@ -131,9 +128,7 @@ class ScheduleActivityDialog extends HookConsumerWidget {
             const SizedBox(height: 12),
             TextField(
               controller: summaryController,
-              decoration: const InputDecoration(
-                labelText: 'Summary',
-              ),
+              decoration: const InputDecoration(labelText: 'Summary'),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -148,9 +143,7 @@ class ScheduleActivityDialog extends HookConsumerWidget {
             OutlinedButton.icon(
               onPressed: pickDate,
               icon: const Icon(Icons.calendar_today_outlined),
-              label: Text(
-                'Due Date: ${dateFormat.format(dueDate.value)}',
-              ),
+              label: Text('Due Date: ${dateFormat.format(dueDate.value)}'),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
@@ -158,17 +151,12 @@ class ScheduleActivityDialog extends HookConsumerWidget {
               value: selectedUser.id,
               isExpanded: true,
               menuMaxHeight: 240,
-              decoration: const InputDecoration(
-                labelText: 'Assigned To',
-              ),
+              decoration: const InputDecoration(labelText: 'Assigned To'),
               items: users
                   .map(
                     (user) => DropdownMenuItem<int>(
                       value: user.id,
-                      child: Text(
-                        user.name,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text(user.name, overflow: TextOverflow.ellipsis),
                     ),
                   )
                   .toList(),
@@ -193,21 +181,17 @@ class ScheduleActivityDialog extends HookConsumerWidget {
                 child: LoadingView(message: 'Loading...'),
               )
             : typeError != null
-                ? Text(
-                    typeError is Failure
-                        ? typeError.message
-                        : typeError.toString(),
-                  )
-                : userError != null
-                    ? Text(
-                        userError is Failure
-                            ? userError.message
-                            : userError.toString(),
-                      )
-                    : buildForm(
-                        types: typesAsync.valueOrNull ?? const [],
-                        users: usersAsync.valueOrNull ?? const [],
-                      ),
+            ? Text(
+                typeError is Failure ? typeError.message : typeError.toString(),
+              )
+            : userError != null
+            ? Text(
+                userError is Failure ? userError.message : userError.toString(),
+              )
+            : buildForm(
+                types: typesAsync.valueOrNull ?? const [],
+                users: usersAsync.valueOrNull ?? const [],
+              ),
       ),
       actions: [
         TextButton(
@@ -222,14 +206,17 @@ class ScheduleActivityDialog extends HookConsumerWidget {
             if (users == null || users.isEmpty) return;
 
             final typeId = selectedTypeId.value ?? types.first.id;
-            final userId = selectedUserId.value ??
+            final userId =
+                selectedUserId.value ??
                 (users.any((u) => u.id == currentUser.id)
                     ? currentUser.id
                     : users.first.id);
             final summary = summaryController.text.trim();
             if (summary.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Summary is required')),
+              showTopNotice(
+                context,
+                'Summary is required',
+                kind: TopNoticeKind.error,
               );
               return;
             }

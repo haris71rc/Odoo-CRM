@@ -7,6 +7,7 @@ import 'package:odoocrm/features/leads/data/mapper/lead_mapper.dart';
 import 'package:odoocrm/features/leads/domain/entities/duplicate_lead_candidate.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
+import 'package:odoocrm/features/leads/domain/entities/lost_reason.dart';
 import 'package:odoocrm/features/leads/domain/repository/lead_repository.dart';
 import 'package:odoocrm/features/leads/domain/utils/duplicate_lead_matcher.dart';
 
@@ -96,6 +97,58 @@ class LeadRepositoryImpl implements LeadRepository {
   }) async {
     try {
       await _datasource.write(leadId, {'stage_id': stageId});
+      return const Success(null);
+    } on Failure catch (failure) {
+      return Error(failure);
+    } catch (e) {
+      return Error(UnexpectedFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Result<List<LostReason>>> searchLostReasons(
+    int leadId,
+    String query,
+  ) async {
+    try {
+      return Success(await _datasource.searchLostReasons(leadId, query));
+    } on Failure catch (failure) {
+      return Error(failure);
+    } catch (e) {
+      return Error(UnexpectedFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Result<LostReasonPage>> getLostReasons(
+    int leadId, {
+    required int offset,
+  }) async {
+    try {
+      return Success(await _datasource.getLostReasons(leadId, offset: offset));
+    } on Failure catch (failure) {
+      return Error(failure);
+    } catch (e) {
+      return Error(UnexpectedFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Result<void>> markLost({
+    required int leadId,
+    required int reasonId,
+    required String feedback,
+    required int userId,
+    required int lostStageId,
+  }) async {
+    try {
+      await _datasource.markLost(
+        leadId: leadId,
+        reasonId: reasonId,
+        feedback: feedback,
+        userId: userId,
+        lostStageId: lostStageId,
+      );
       return const Success(null);
     } on Failure catch (failure) {
       return Error(failure);

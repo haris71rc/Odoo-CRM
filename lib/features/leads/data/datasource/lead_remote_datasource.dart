@@ -7,6 +7,7 @@ import 'package:odoocrm/core/utils/date_formatters.dart';
 import 'package:odoocrm/features/leads/data/dto/lead_detail_dto.dart';
 import 'package:odoocrm/features/leads/data/dto/lead_dto.dart';
 import 'package:odoocrm/features/leads/data/dto/lead_phone_snapshot.dart';
+import 'package:odoocrm/features/leads/domain/entities/lost_reason.dart';
 
 class LeadRemoteDatasource {
   LeadRemoteDatasource(this._dioClient);
@@ -314,4 +315,146 @@ class LeadRemoteDatasource {
 
     await _dioClient.postJsonRpc(AppConstants.callKwPath, request);
   }
+
+  Map<String, dynamic> _lostContext(int leadId, {int? userId}) => {
+    'lang': 'en_US',
+    'tz': 'Asia/Kolkata',
+    'uid': ?userId,
+    if (AppEnvironment.allowedCompanyIds.isNotEmpty)
+      'allowed_company_ids': AppEnvironment.allowedCompanyIds,
+    'active_model': 'crm.lead',
+    'active_id': leadId,
+    'active_ids': [leadId],
+    'dialog_size': 'medium',
+  };
+
+  Future<List<LostReason>> searchLostReasons(int leadId, String query) async {
+    final response = await _dioClient.postJsonRpc(
+      '${AppConstants.callKwPath}/crm.lost.reason/name_search',
+      JsonRpcRequest.callKw(
+        model: 'crm.lost.reason',
+        method: 'name_search',
+        kwargs: {
+          'name': query,
+          'operator': 'ilike',
+          'args': <dynamic>[],
+          'limit': 8,
+          'context': _lostContext(leadId),
+        },
+      ),
+    );
+    final rows = response['result'];
+    if (rows is! List) {
+      throw const ParsingFailure('Unexpected lost reasons response');
+    }
+    return [
+      for (final row in rows)
+        if (row is List && row.length >= 2 && row[0] is int)
+          LostReason(id: row[0] as int, name: row[1].toString()),
+    ];
+  }
+
+  Future<LostReasonPage> getLostReasons(
+    int leadId, {
+    required int offset,
+  }) async {
+    final response = await _dioClient.postJsonRpc(
+      '${AppConstants.callKwPath}/crm.lost.reason/web_search_read',
+      JsonRpcRequest.callKw(
+        model: 'crm.lost.reason',
+        method: 'web_search_read',
+        kwargs: {
+          'specification': {'name': <String, dynamic>{}},
+          'offset': offset,
+          'order': '',
+          'limit': 80,
+          'context': _lostContext(leadId),
+          'count_limit': 10001,
+          'domain': <dynamic>[],
+        },
+      ),
+    );
+    final result = response['result'];
+    if (result is! Map || result['records'] is! List) {
+      throw const ParsingFailure('Unexpected lost reasons page');
+    }
+    final rows = result['records'] as List;
+    return LostReasonPage(
+      records: [
+        for (final row in rows)
+          if (row is Map && row['id'] is int)
+            LostReason(id: row['id'] as int, name: row['name'].toString()),
+      ],
+      total: (result['length'] as num?)?.toInt() ?? offset + rows.length,
+    );
+  }
+
+  Future<void> markLost({
+    required int leadId,
+    required int reasonId,
+    required String feedback,
+    required int userId,
+    required int lostStageId,
+  }) async {
+    final context = {
+      ..._lostContext(leadId, userId: userId),
+      'default_lead_ids': [leadId],
+    };
+    final saved = await _dioClient.postJsonRpc(
+      '${AppConstants.callKwPath}/crm.lead.lost/web_save',
+      JsonRpcRequest.callKw(
+        model: 'crm.lead.lost',
+        method: 'web_save',
+        args: [
+          <int>[],
+          {
+            'lead_ids': [
+              [4, leadId],
+            ],
+            'lost_reason_id': reasonId,
+            'lost_feedback': feedback.isEmpty
+                ? false
+                : '<div data-oe-version="1.2">${_escapeHtml(feedback)}</div>',
+          },
+        ],
+        kwargs: {
+          'context': context,
+          'specification': {
+            'lead_ids': <String, dynamic>{},
+            'lost_reason_id': {
+              'fields': {'display_name': <String, dynamic>{}},
+            },
+            'lost_feedback': <String, dynamic>{},
+          },
+        },
+      ),
+    );
+    final records = saved['result'];
+    if (records is! List ||
+        records.isEmpty ||
+        records.first is! Map ||
+        (records.first as Map)['id'] is! int) {
+      throw const ParsingFailure('Lost reason was not saved');
+    }
+    final wizardId = (records.first as Map)['id'] as int;
+    await _dioClient.postJsonRpc(
+      AppConstants.callButtonPath('crm.lead.lost', 'action_lost_reason_apply'),
+      JsonRpcRequest.callButton(
+        model: 'crm.lead.lost',
+        method: 'action_lost_reason_apply',
+        args: [
+          [wizardId],
+        ],
+        kwargs: {'context': context},
+      ),
+    );
+    await write(leadId, {'stage_id': lostStageId});
+  }
+
+  static String _escapeHtml(String value) => value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
 }

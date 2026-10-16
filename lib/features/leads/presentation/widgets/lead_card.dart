@@ -3,6 +3,7 @@ import 'package:odoocrm/core/theme/app_theme.dart';
 import 'package:odoocrm/core/theme/stage_colors.dart';
 import 'package:odoocrm/core/utils/date_formatters.dart';
 import 'package:odoocrm/core/utils/initials.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/duplicate_lead_chip.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,16 +33,20 @@ class LeadCard extends StatelessWidget {
   Future<void> _call(BuildContext context) async {
     final number = lead.phone;
     if (number == null || number.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No phone number available')),
+      showTopNotice(
+        context,
+        'No phone number available',
+        kind: TopNoticeKind.error,
       );
       return;
     }
     final uri = Uri(scheme: 'tel', path: number);
     final launched = await launchUrl(uri);
     if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open dialer')),
+      showTopNotice(
+        context,
+        'Unable to open dialer',
+        kind: TopNoticeKind.error,
       );
     }
   }
@@ -209,8 +214,9 @@ class LeadCard extends StatelessWidget {
                           const SizedBox(width: 10),
                         ],
                         Text(
-                          DateFormatters.formatDate(lead.createdDate)
-                              .replaceAll(RegExp(r'\s+\d{4}$'), ''),
+                          DateFormatters.formatDate(
+                            lead.createdDate,
+                          ).replaceAll(RegExp(r'\s+\d{4}$'), ''),
                           style: AppTheme.mono(
                             fontSize: 11,
                             color: AppTheme.textMuted,
@@ -294,9 +300,7 @@ class _ActionChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: active ? bg : AppTheme.surface,
           borderRadius: BorderRadius.circular(9),
-          border: Border.all(
-            color: active ? border : const Color(0xFFD0D5DD),
-          ),
+          border: Border.all(color: active ? border : const Color(0xFFD0D5DD)),
         ),
         child: Text(
           label,

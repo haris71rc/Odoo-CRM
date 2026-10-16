@@ -11,6 +11,7 @@ import 'package:odoocrm/core/utils/initials.dart';
 import 'package:odoocrm/core/widgets/empty_view.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
 import 'package:odoocrm/features/chatter/presentation/widgets/chatter_message_body.dart';
@@ -23,6 +24,7 @@ import 'package:odoocrm/features/leads/presentation/providers/lead_detail_notifi
 import 'package:odoocrm/features/leads/presentation/providers/lead_notifier.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/assign_lead_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/duplicate_lead_chip.dart';
+import 'package:odoocrm/features/leads/presentation/widgets/mark_lost_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_actions_sheet.dart';
 import 'package:odoocrm/features/leads/presentation/widgets/whatsapp_fab.dart';
 import 'package:odoocrm/core/services/whatsapp_service.dart';
@@ -75,7 +77,8 @@ class LeadDetailPage extends HookConsumerWidget {
     final tab = useState(_DetailTab.info);
     final dialSync = ref.watch(outboundDialSyncServiceProvider);
     final pendingDial = useValueListenable(dialSync.pending);
-    final dialBlocksCall = pendingDial != null &&
+    final dialBlocksCall =
+        pendingDial != null &&
         pendingDial.leadId == leadId &&
         pendingDial.blocksNewCall;
 
@@ -87,8 +90,9 @@ class LeadDetailPage extends HookConsumerWidget {
         if (!dialSync.claimPrompt(leadId)) return;
         showingPrompt = true;
         try {
-          final statusOptions =
-              await ref.read(callStatusOptionsProvider(leadId).future);
+          final statusOptions = await ref.read(
+            callStatusOptionsProvider(leadId).future,
+          );
           if (!context.mounted) {
             dialSync.releasePrompt(leadId);
             return;
@@ -115,9 +119,7 @@ class LeadDetailPage extends HookConsumerWidget {
           return;
         }
         dialSync.claimNotice(leadId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(notice.message)),
-        );
+        showTopNotice(context, notice.message);
       }
 
       dialSync.promptLeadId.addListener(maybeShowPrompt);
@@ -132,9 +134,7 @@ class LeadDetailPage extends HookConsumerWidget {
 
     Future<void> showMessage(String message) async {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      showTopNotice(context, message);
     }
 
     Future<void> showStageValidationError(String message) async {
@@ -197,6 +197,43 @@ class LeadDetailPage extends HookConsumerWidget {
     }
 
     Future<void> setWonLost({required bool won}) async {
+      if (!won) {
+        final selection = await showMarkLostSheet(context, leadId);
+        if (selection == null || !context.mounted) return;
+        final stages = await ref.read(stageNotifierProvider.future);
+        StageEntity? lostStage;
+        for (final stage in stages) {
+          if (_isLostName(stage.name)) {
+            lostStage = stage;
+            break;
+          }
+        }
+        if (lostStage == null) {
+          await showMessage('Lost stage not found');
+          return;
+        }
+        if (currentUser == null) {
+          await showMessage('User session not found');
+          return;
+        }
+        isActing.value = true;
+        final error = await ref
+            .read(leadDetailNotifierProvider(leadId).notifier)
+            .markLost(
+              reasonId: selection.reasonId,
+              feedback: selection.feedback,
+              userId: currentUser.id,
+              lostStageId: lostStage.id,
+            );
+        isActing.value = false;
+        if (error != null) {
+          await showMessage(error);
+          return;
+        }
+        ref.invalidate(leadNotifierProvider);
+        await showMessage('Marked as Lost');
+        return;
+      }
       final stages = stagesAsync.valueOrNull ?? const <StageEntity>[];
       StageEntity? target;
       for (final s in stages) {
@@ -382,7 +419,9 @@ class LeadDetailPage extends HookConsumerWidget {
           await showStageValidationError(error);
           return;
         }
-        await showMessage('Stage updated');
+        if (context.mounted) {
+          showTopNotice(context, 'Stage updated', kind: TopNoticeKind.success);
+        }
       } catch (e) {
         isActing.value = false;
         await showMessage(e is Failure ? e.message : e.toString());
@@ -532,7 +571,8 @@ class LeadDetailPage extends HookConsumerWidget {
                                   icon: Icons.request_quote_outlined,
                                   active: false,
                                   loading: isCreatingQuotation.value,
-                                  onTap: isActing.value ||
+                                  onTap:
+                                      isActing.value ||
                                           isCreatingQuotation.value
                                       ? null
                                       : createQuotation,
@@ -550,11 +590,14 @@ class LeadDetailPage extends HookConsumerWidget {
                                       vertical: 11,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.10),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.10,
+                                      ),
                                       borderRadius: BorderRadius.circular(11),
                                       border: Border.all(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.18),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.18,
+                                        ),
                                       ),
                                     ),
                                     child: Row(
@@ -587,18 +630,22 @@ class LeadDetailPage extends HookConsumerWidget {
                                         ),
                                         Row(
                                           children: [
-                                            for (var i = 0;
-                                                i < sortedStages.length && i < 6;
-                                                i++) ...[
-                                              if (i > 0) const SizedBox(width: 4),
+                                            for (
+                                              var i = 0;
+                                              i < sortedStages.length && i < 6;
+                                              i++
+                                            ) ...[
+                                              if (i > 0)
+                                                const SizedBox(width: 4),
                                               Container(
                                                 width: 7,
                                                 height: 7,
                                                 decoration: BoxDecoration(
                                                   color: i <= stageIndex
                                                       ? AppTheme.goldSoft
-                                                      : Colors.white
-                                                          .withValues(alpha: 0.25),
+                                                      : Colors.white.withValues(
+                                                          alpha: 0.25,
+                                                        ),
                                                   shape: BoxShape.circle,
                                                 ),
                                               ),
@@ -632,7 +679,8 @@ class LeadDetailPage extends HookConsumerWidget {
                                             const SizedBox(width: 20),
                                             _DetailTabBtn(
                                               label: 'Internal Note',
-                                              selected: tab.value ==
+                                              selected:
+                                                  tab.value ==
                                                   _DetailTab.internalNote,
                                               onTap: () => tab.value =
                                                   _DetailTab.internalNote,
@@ -640,7 +688,8 @@ class LeadDetailPage extends HookConsumerWidget {
                                             const SizedBox(width: 20),
                                             _DetailTabBtn(
                                               label: 'Remarks',
-                                              selected: tab.value ==
+                                              selected:
+                                                  tab.value ==
                                                   _DetailTab.remarks,
                                               onTap: () => tab.value =
                                                   _DetailTab.remarks,
@@ -713,10 +762,7 @@ class LeadDetailPage extends HookConsumerWidget {
                     gradient: LinearGradient(
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
-                      colors: [
-                        AppTheme.scaffold,
-                        Color(0x00F6F7F9),
-                      ],
+                      colors: [AppTheme.scaffold, Color(0x00F6F7F9)],
                       stops: [0.68, 1],
                     ),
                   ),
@@ -728,12 +774,12 @@ class LeadDetailPage extends HookConsumerWidget {
                                 onPressed: noteState.isSaving
                                     ? null
                                     : () => ref
-                                        .read(
-                                          internalNoteNotifierProvider(
-                                            leadId,
-                                          ).notifier,
-                                        )
-                                        .cancel(),
+                                          .read(
+                                            internalNoteNotifierProvider(
+                                              leadId,
+                                            ).notifier,
+                                          )
+                                          .cancel(),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: AppTheme.textSecondary,
                                   side: const BorderSide(
@@ -813,8 +859,9 @@ class LeadDetailPage extends HookConsumerWidget {
                                 borderRadius: BorderRadius.circular(27),
                               ),
                               elevation: 0,
-                              shadowColor:
-                                  AppTheme.callGreen.withValues(alpha: 0.32),
+                              shadowColor: AppTheme.callGreen.withValues(
+                                alpha: 0.32,
+                              ),
                             ),
                             icon: const Icon(Icons.phone, size: 19),
                             label: Text(
@@ -831,10 +878,7 @@ class LeadDetailPage extends HookConsumerWidget {
               // WhatsApp FAB — 16dp from right, 24dp above the Call bar.
               Positioned(
                 right: 16,
-                bottom: 16 +
-                    MediaQuery.paddingOf(context).bottom +
-                    54 +
-                    24,
+                bottom: 16 + MediaQuery.paddingOf(context).bottom + 54 + 24,
                 child: WhatsAppFab(
                   onPressed: () {
                     showWhatsAppActionsSheet(
@@ -897,17 +941,10 @@ class _HeaderAction extends StatelessWidget {
               SizedBox(
                 width: 14,
                 height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: color,
-                ),
+                child: CircularProgressIndicator(strokeWidth: 2, color: color),
               )
             else
-              Icon(
-                icon,
-                size: 14,
-                color: color,
-              ),
+              Icon(icon, size: 14, color: color),
             const SizedBox(width: 6),
             Text(
               label,
@@ -1032,10 +1069,11 @@ class _DetailsTab extends StatelessWidget {
       ('Email', lead.email ?? '—'),
       (
         'City',
-        [
-          lead.city,
-          lead.state?.name,
-        ].whereType<String>().where((e) => e.isNotEmpty).join(', ').ifEmpty('—'),
+        [lead.city, lead.state?.name]
+            .whereType<String>()
+            .where((e) => e.isNotEmpty)
+            .join(', ')
+            .ifEmpty('—'),
       ),
     ];
     final crmRows = [
@@ -1059,7 +1097,9 @@ class _DetailsTab extends StatelessWidget {
             color: isMine ? const Color(0xFFF4F7FB) : AppTheme.surface,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isMine ? AppTheme.navy.withValues(alpha: 0.25) : AppTheme.border,
+              color: isMine
+                  ? AppTheme.navy.withValues(alpha: 0.25)
+                  : AppTheme.border,
             ),
           ),
           child: Row(
@@ -1372,11 +1412,8 @@ class _RemarksTab extends ConsumerWidget {
     return Column(
       children: [
         InkWell(
-          onTap: () => showLogNoteSheet(
-            context: context,
-            ref: ref,
-            leadId: leadId,
-          ),
+          onTap: () =>
+              showLogNoteSheet(context: context, ref: ref, leadId: leadId),
           borderRadius: BorderRadius.circular(13),
           child: Container(
             width: double.infinity,
@@ -1384,10 +1421,7 @@ class _RemarksTab extends ConsumerWidget {
             decoration: BoxDecoration(
               color: AppTheme.surface,
               borderRadius: BorderRadius.circular(13),
-              border: Border.all(
-                color: const Color(0xFFC6D0DF),
-                width: 1.5,
-              ),
+              border: Border.all(color: const Color(0xFFC6D0DF), width: 1.5),
             ),
             child: const Row(
               children: [

@@ -134,6 +134,29 @@ class LeadDetailNotifier extends _$LeadDetailNotifier {
     return null;
   }
 
+  Future<String?> markLost({
+    required int reasonId,
+    required String feedback,
+    required int userId,
+    required int lostStageId,
+  }) async {
+    final result = await ref
+        .read(leadRepositoryProvider)
+        .markLost(
+          leadId: leadId,
+          reasonId: reasonId,
+          feedback: feedback,
+          userId: userId,
+          lostStageId: lostStageId,
+        );
+    if (result.isFailure) return result.failureOrNull!.message;
+    ref.invalidate(leadCallLogProvider(leadId));
+    ref.invalidate(duplicateLeadIdsProvider);
+    ref.invalidateSelf();
+    await future;
+    return null;
+  }
+
   Future<String?> updateRemark(String description) async {
     final repository = ref.read(leadRepositoryProvider);
     final result = await repository.updateRemark(

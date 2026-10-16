@@ -1,6 +1,7 @@
 import 'package:odoocrm/core/error/result.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_detail_entity.dart';
 import 'package:odoocrm/features/leads/domain/entities/lead_entity.dart';
+import 'package:odoocrm/features/leads/domain/entities/lost_reason.dart';
 
 abstract class LeadRepository {
   Future<Result<List<LeadEntity>>> getLeads({
@@ -22,6 +23,21 @@ abstract class LeadRepository {
   Future<Result<void>> assignToUser({required int leadId, required int userId});
 
   Future<Result<void>> updateStage({required int leadId, required int stageId});
+
+  Future<Result<List<LostReason>>> searchLostReasons(int leadId, String query);
+
+  Future<Result<LostReasonPage>> getLostReasons(
+    int leadId, {
+    required int offset,
+  });
+
+  Future<Result<void>> markLost({
+    required int leadId,
+    required int reasonId,
+    required String feedback,
+    required int userId,
+    required int lostStageId,
+  });
 
   Future<Result<void>> updateRemark({
     required int leadId,

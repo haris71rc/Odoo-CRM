@@ -6,6 +6,7 @@ import 'package:odoocrm/core/utils/date_formatters.dart';
 import 'package:odoocrm/core/widgets/empty_view.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/activities/domain/entities/activity_entity.dart';
 import 'package:odoocrm/features/activities/presentation/providers/activity_notifier.dart';
 
@@ -81,26 +82,24 @@ class RecentActivitiesSection extends ConsumerWidget {
         .completeActivity(activity.id);
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(error ?? 'Activity marked as done'),
-      ),
+    showTopNotice(
+      context,
+      error ?? 'Activity marked as done',
+      kind: error == null ? TopNoticeKind.success : TopNoticeKind.error,
     );
   }
 }
 
 class _ActivityTile extends StatelessWidget {
-  const _ActivityTile({
-    required this.activity,
-    required this.onMarkDone,
-  });
+  const _ActivityTile({required this.activity, required this.onMarkDone});
 
   final ActivityEntity activity;
   final VoidCallback onMarkDone;
 
   @override
   Widget build(BuildContext context) {
-    final overdue = activity.dateDeadline != null &&
+    final overdue =
+        activity.dateDeadline != null &&
         activity.dateDeadline!.isBefore(DateTime.now()) &&
         activity.state != 'done';
 
@@ -158,9 +157,7 @@ class _ActivityTile extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
-                        color: overdue
-                            ? AppTheme.lostFg
-                            : AppTheme.textMuted,
+                        color: overdue ? AppTheme.lostFg : AppTheme.textMuted,
                       ),
                     ),
                   ],

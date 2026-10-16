@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/chatter/presentation/providers/chatter_notifier.dart';
 
 Future<void> showLogNoteSheet({
@@ -30,8 +31,10 @@ class _LogNoteSheet extends HookConsumerWidget {
     Future<void> save() async {
       final note = controller.text.trim();
       if (note.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a note')),
+        showTopNotice(
+          context,
+          'Please enter a note',
+          kind: TopNoticeKind.error,
         );
         return;
       }
@@ -43,10 +46,12 @@ class _LogNoteSheet extends HookConsumerWidget {
       isSaving.value = false;
 
       if (!context.mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error ?? 'Note logged successfully')),
+      showTopNotice(
+        context,
+        error ?? 'Note logged successfully',
+        kind: error == null ? TopNoticeKind.success : TopNoticeKind.error,
       );
+      Navigator.pop(context);
     }
 
     return Padding(
@@ -57,9 +62,9 @@ class _LogNoteSheet extends HookConsumerWidget {
         children: [
           Text(
             'Add remark',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -76,8 +81,9 @@ class _LogNoteSheet extends HookConsumerWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed:
-                      isSaving.value ? null : () => Navigator.pop(context),
+                  onPressed: isSaving.value
+                      ? null
+                      : () => Navigator.pop(context),
                   child: const Text('Cancel'),
                 ),
               ),

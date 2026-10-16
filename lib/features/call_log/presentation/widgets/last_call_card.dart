@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:odoocrm/core/theme/app_theme.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/call_log/domain/entities/call_log.dart';
 import 'package:odoocrm/features/call_log/presentation/providers/call_log_providers.dart';
 
@@ -29,12 +30,10 @@ class _LastCallCardState extends ConsumerState<LastCallCard> {
         final granted = await reader.ensurePermission();
         if (!granted) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Phone & Call Log permission is required to sync calls.',
-              ),
-            ),
+          showTopNotice(
+            context,
+            'Phone & Call Log permission is required to sync calls.',
+            kind: TopNoticeKind.error,
           );
           return;
         }
@@ -43,15 +42,17 @@ class _LastCallCardState extends ConsumerState<LastCallCard> {
       ref.invalidate(leadCallLogProvider(widget.leadId));
       final after = await ref.read(leadCallLogProvider(widget.leadId).future);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_syncMessage(before, after))),
+      showTopNotice(
+        context,
+        _syncMessage(before, after),
+        kind: TopNoticeKind.success,
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not sync the call log. Try again.'),
-        ),
+      showTopNotice(
+        context,
+        'Could not sync the call log. Try again.',
+        kind: TopNoticeKind.error,
       );
     } finally {
       if (mounted) setState(() => _isSyncing = false);
@@ -69,7 +70,8 @@ class _LastCallCardState extends ConsumerState<LastCallCard> {
           ? 'Synced 1 call from the phone'
           : 'Synced $added calls from the phone';
     }
-    final refreshed = before?.duration != after.duration ||
+    final refreshed =
+        before?.duration != after.duration ||
         before?.status != after.status ||
         before?.lastCallDate != after.lastCallDate ||
         before?.totalDuration != after.totalDuration;
@@ -179,10 +181,7 @@ class _CallLogShell extends StatelessWidget {
 }
 
 class _SyncButton extends StatefulWidget {
-  const _SyncButton({
-    required this.isSyncing,
-    required this.onTap,
-  });
+  const _SyncButton({required this.isSyncing, required this.onTap});
 
   final bool isSyncing;
   final VoidCallback? onTap;

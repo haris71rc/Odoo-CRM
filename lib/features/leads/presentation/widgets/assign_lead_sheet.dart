@@ -7,6 +7,7 @@ import 'package:odoocrm/core/error/failures.dart';
 import 'package:odoocrm/core/widgets/empty_view.dart';
 import 'package:odoocrm/core/widgets/error_view.dart';
 import 'package:odoocrm/core/widgets/loading_view.dart';
+import 'package:odoocrm/core/widgets/top_notice.dart';
 import 'package:odoocrm/features/leads/presentation/providers/assign_lead_notifier.dart';
 import 'package:odoocrm/features/users/domain/entities/user_entity.dart';
 import 'package:odoocrm/features/users/presentation/providers/users_notifier.dart';
@@ -22,10 +23,8 @@ Future<void> showAssignLeadSheet({
     isScrollControlled: true,
     showDragHandle: true,
     useSafeArea: true,
-    builder: (_) => AssignLeadSheet(
-      leadId: leadId,
-      currentAssigneeId: currentAssigneeId,
-    ),
+    builder: (_) =>
+        AssignLeadSheet(leadId: leadId, currentAssigneeId: currentAssigneeId),
   );
 }
 
@@ -89,14 +88,12 @@ class AssignLeadSheet extends HookConsumerWidget {
           .assign(userId: user.id);
 
       if (!context.mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error ?? 'Lead assigned successfully.',
-          ),
-        ),
+      showTopNotice(
+        context,
+        error ?? 'Lead assigned successfully.',
+        kind: error == null ? TopNoticeKind.success : TopNoticeKind.error,
       );
+      Navigator.pop(context);
     }
 
     return SizedBox(
@@ -108,9 +105,9 @@ class AssignLeadSheet extends HookConsumerWidget {
           children: [
             Text(
               'Assign Lead',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -125,8 +122,7 @@ class AssignLeadSheet extends HookConsumerWidget {
               child: usersAsync.when(
                 loading: () => const LoadingView(message: 'Loading users...'),
                 error: (error, _) => ErrorView(
-                  message:
-                      error is Failure ? error.message : error.toString(),
+                  message: error is Failure ? error.message : error.toString(),
                   onRetry: () =>
                       ref.read(usersNotifierProvider.notifier).refresh(),
                 ),
@@ -135,11 +131,10 @@ class AssignLeadSheet extends HookConsumerWidget {
                   final filtered = query.isEmpty
                       ? users
                       : users
-                          .where(
-                            (user) =>
-                                user.name.toLowerCase().contains(query),
-                          )
-                          .toList();
+                            .where(
+                              (user) => user.name.toLowerCase().contains(query),
+                            )
+                            .toList();
 
                   if (filtered.isEmpty) {
                     return const EmptyView(
